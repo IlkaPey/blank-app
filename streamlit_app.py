@@ -207,10 +207,10 @@ else:
 
         st.write("---")
         with col_control:
-        st.subheader("⚙️ Steuerung")
-        k_value = st.slider("Anzahl der Cluster (k):", min_value=2, max_value=5, value=3, help="Die Anzahl der Gruppen, die der Algorithmus finden soll.")
-        
-        st.write(f"Teilnehmende Personen: **{len(df_raw)}**")
+            st.subheader("⚙️ Steuerung")
+            k_value = st.slider("Anzahl der Cluster (k):", min_value=2, max_value=5, value=3, help="Die Anzahl der Gruppen, die der Algorithmus finden soll.")
+            
+            st.write(f"Teilnehmende Personen: **{len(df_raw)}**")
         
         if st.button("➕ Zusätzliche (simulierte) Daten hinzufügen", use_container_width=True):
             generate_and_insert_simulated_data(num_points_per_cluster=5)
