@@ -36,25 +36,19 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
     conn = sqlite3.connect("survey_data.db")
     cursor = conn.cursor()
     
-    # Beispiel-Cluster-Zentren für simulierte Daten
-    # Diese Werte sind gewählt, um "natürliche" Cluster zu erzeugen
     sim_clusters = [
         {"name_prefix": "Sim_A", "mean_coffee": 1, "mean_commute": 15, "std_coffee": 0.5, "std_commute": 5},
         {"name_prefix": "Sim_B", "mean_coffee": 6, "mean_commute": 20, "std_coffee": 1, "std_commute": 7},
         {"name_prefix": "Sim_C", "mean_coffee": 3, "mean_commute": 50, "std_coffee": 0.8, "std_commute": 10},
     ]
     
-    # Ermittle die höchste ID von bereits existierenden simulierten Daten
-    # um eindeutige Namen zu gewährleisten, z.B. Sim_A_1, Sim_A_2, Sim_B_1, etc.
     current_max_sim_id = 0
     try:
-        # Versuche, die höchste numerische Endung zu finden
         cursor.execute("SELECT MAX(CAST(SUBSTR(name, INSTR(name, '_') + 1) AS INTEGER)) FROM responses WHERE name LIKE 'Sim_%'")
         res = cursor.fetchone()
         if res[0] is not None:
             current_max_sim_id = res[0]
     except Exception:
-        # Falls noch keine simulierten Daten oder der Name anders ist
         pass
 
     sim_data_to_insert = []
@@ -63,13 +57,11 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
             current_max_sim_id += 1
             name = f"{cluster_info['name_prefix']}_{current_max_sim_id}"
             
-            # Generiere Daten mit Normalverteilung um den Mittelwert des Clusters
             coffee = np.random.normal(cluster_info['mean_coffee'], cluster_info['std_coffee'])
             commute = np.random.normal(cluster_info['mean_commute'], cluster_info['std_commute'])
             
-            # Sicherstellen, dass Werte nicht negativ sind und ganze Zahlen sind
-            coffee = max(0, round(coffee)) # Runde auf ganze Tassen
-            commute = max(0, round(commute)) # Runde auf ganze Minuten
+            coffee = max(0, round(coffee))
+            commute = max(0, round(commute))
 
             sim_data_to_insert.append((name, coffee, commute))
 
@@ -91,7 +83,6 @@ if view == "📱 Teilnehmer: Fragebogen":
 
     with st.form("survey_form", clear_on_submit=True):
         user_name = st.text_input("Dein Name / Kürzel:", placeholder="z. B. Anna oder Gast_1")
-        # Kaffee Tassen auf ganze Zahlen beschränkt
         ans_x = st.slider(FRAGE_1, 0, 10, 3, step=1)
         ans_y = st.slider(FRAGE_2, 0, 90, 20, step=5)
 
@@ -138,41 +129,47 @@ else:
         k_value = st.slider("Anzahl der Cluster (k):", min_value=2, max_value=5, value=3, help="Die Anzahl der Gruppen, die der Algorithmus finden soll.")
         
         st.write(f"Teilnehmende Personen: **{len(df_raw)}**")
-        # --- DEBUG-Ausgaben (können entfernt werden, wenn alles funktioniert) ---
-        # st.write(f"DEBUG: Aktueller km_step: `{st.session_state.km_step}`")
-        # if not st.session_state.centroids.empty:
-        #     st.write("DEBUG: Centroids (Kaffee, Reisezeit):")
-        #     st.dataframe(st.session_state.centroids)
-        # if len(st.session_state.assignments) > 0:
-        #      st.write(f"DEBUG: Zuweisungen: {st.session_state.assignments}")
-        # st.write("---")
 
         # NEUER BUTTON FÜR SIMULIERTE DATEN
         if st.button("➕ Zusätzliche (simulierte) Daten hinzufügen", use_container_width=True):
             generate_and_insert_simulated_data(num_points_per_cluster=5) # Fügt 5 Punkte pro simuliertem Cluster hinzu
-            st.rerun() # App neu laden, um die neuen Daten anzuzeigen
+            st.rerun()
         
-        st.write("---") # Trennlinie
+        st.write("---")
 
-        # --- NEU: DATEN EXPORTIEREN ---
-        if not df_raw.empty: # Nur anzeigen, wenn Daten vorhanden sind
-            csv_data = df_raw.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="⬇️ Gesammelte Daten als CSV exportieren",
-                data=csv_data,
-                file_name=f"kmeans_praesentation_daten_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        st.write("---") # Trennlinie
+        # Funktion zum Zuweisen der Punkte
+        def assign_points():
+            assignments = np.zeros(len(df_raw), dtype=int)
+            for i, row in df_raw.iterrows():
+                dists = np.sqrt((st.session_state.centroids["Kaffee"] - row["Kaffee"])**2 + (st.session_state.centroids["Reisezeit"] - row["Reisezeit"])**2)
+                assignments[i] = np.argmin(dists)
+            st.session_state.assignments = assignments
+            st.session_state.km_step = "points_assigned"
+        
+        # Funktion zum Verschieben der Centroids
+        def move_centroids():
+            df_temp = df_raw.copy()
+            df_temp["Cluster"] = st.session_state.assignments
+
+            new_centroids_data = []
+            for c in range(k_value):
+                cluster_points = df_temp[df_temp["Cluster"] == c]
+                if not cluster_points.empty:
+                    new_centroids_data.append(cluster_points[["Kaffee", "Reisezeit"]].mean().to_dict())
+                else:
+                    st.warning(f"Cluster {c} ist leer. Alter Centroid wird beibehalten.")
+                    new_centroids_data.append(st.session_state.centroids.iloc[c].to_dict())
+            
+            st.session_state.prev_centroids = st.session_state.centroids.copy()
+            st.session_state.centroids = pd.DataFrame(new_centroids_data)
+            st.session_state.km_step = "centroids_moved"
+        
+        # Schwellenwert für Konvergenz
+        convergence_threshold = 0.1 # Centroids bewegen sich weniger als 0.1 Einheit in x oder y
 
         if len(df_raw) < k_value:
             st.warning(f"Warte auf mindestens {k_value} Teilnehmerpunkte, um K-Means starten zu können.")
             st.session_state.km_step = "init"
-
-        if len(df_raw) < k_value:
-            st.warning(f"Warte auf mindestens {k_value} Teilnehmerpunkte, um K-Means starten zu können.")
-            st.session_state.km_step = "init" # Zurücksetzen, wenn nicht genug Daten
         
         # --- K-Means Schritte ---
         
@@ -180,7 +177,6 @@ else:
         disabled_init_btn = (len(df_raw) < k_value) or (st.session_state.km_step not in ["init", "centroids_moved"])
         if st.button("1. Zentren zufällig setzen 📍", use_container_width=True, disabled=disabled_init_btn):
             if len(df_raw) >= k_value:
-                # np.random.seed(42) # Für reproduzierbare Initialisierung, optional
                 indices = np.random.choice(df_raw.index, size=k_value, replace=False)
                 st.session_state.centroids = df_raw.loc[indices, ["Kaffee", "Reisezeit"]].reset_index(drop=True)
                 st.session_state.assignments = np.zeros(len(df_raw), dtype=int)
@@ -191,37 +187,69 @@ else:
         # Punkte zuweisen
         disabled_assign_btn = (st.session_state.km_step not in ["centroids_set", "centroids_moved"]) or len(df_raw) < k_value
         if st.button("2. Punkte dem nächsten Zentrum zuweisen 🔵", use_container_width=True, disabled=disabled_assign_btn):
-            assignments = np.zeros(len(df_raw), dtype=int)
-            for i, row in df_raw.iterrows():
-                dists = np.sqrt((st.session_state.centroids["Kaffee"] - row["Kaffee"])**2 + (st.session_state.centroids["Reisezeit"] - row["Reisezeit"])**2)
-                assignments[i] = np.argmin(dists)
-            st.session_state.assignments = assignments
-            st.session_state.km_step = "points_assigned"
-            # st.write(f"DEBUG: Zuweisungen nach Berechnung in Button 2: {st.session_state.assignments}") # Debug-Ausgabe
+            assign_points()
             st.rerun()
 
         # Zentren verschieben
         disabled_move_btn = (st.session_state.km_step != "points_assigned") or len(df_raw) < k_value
         if st.button("3. Zentren neu berechnen (Mittelwert) 📐", use_container_width=True, disabled=disabled_move_btn):
-            df_temp = df_raw.copy()
-            df_temp["Cluster"] = st.session_state.assignments
-
-            new_centroids_data = []
-            for c in range(k_value):
-                cluster_points = df_temp[df_temp["Cluster"] == c]
-                if not cluster_points.empty:
-                    new_centroids_data.append(cluster_points[["Kaffee", "Reisezeit"]].mean().to_dict())
-                else:
-                    # Wenn ein Cluster leer wird, behalte den alten Centroid (oder setze ihn zufällig neu)
-                    st.warning(f"Cluster {c} ist leer. Alter Centroid wird beibehalten.")
-                    new_centroids_data.append(st.session_state.centroids.iloc[c].to_dict())
-            
-            st.session_state.prev_centroids = st.session_state.centroids.copy()
-            st.session_state.centroids = pd.DataFrame(new_centroids_data)
-            st.session_state.km_step = "centroids_moved"
+            move_centroids()
             st.rerun()
 
         st.write("---")
+
+        # --- NEU: AUTO-ITERATION BUTTON ---
+        disabled_auto_btn = (st.session_state.km_step not in ["centroids_set", "points_assigned", "centroids_moved"]) or len(df_raw) < k_value
+        if st.button("🚀 K-Means automatisch konvergieren lassen", use_container_width=True, disabled=disabled_auto_btn):
+            if st.session_state.km_step == "init": # Sicherstellen, dass Centroids gesetzt sind
+                st.error("Bitte zuerst die Centroids initialisieren (Schritt 1).")
+            else:
+                iteration_count = 0
+                max_iterations = 100 # Sicherheitslimit
+                
+                # Wenn wir gerade nach Schritt 1 sind, weise erst Punkte zu
+                if st.session_state.km_step == "centroids_set":
+                    assign_points()
+                    # Rerun, um die erste Zuweisung zu zeigen
+                    st.rerun() # Das ist wichtig, um den Zustand nach der ersten Zuweisung zu persistieren
+
+                while True:
+                    old_centroids = st.session_state.centroids.copy()
+                    
+                    # Verschiebe Centroids
+                    move_centroids()
+                    
+                    # Prüfe auf Konvergenz
+                    centroids_moved_dist = np.sqrt(((st.session_state.centroids - old_centroids)**2).sum(axis=1)).max()
+                    
+                    if centroids_moved_dist < convergence_threshold or iteration_count >= max_iterations:
+                        st.session_state.km_step = "centroids_converged" # Neuer Zustand
+                        st.success(f"K-Means konvergiert nach {iteration_count+1} Iterationen.")
+                        break
+                    
+                    # Wenn nicht konvergiert, weise Punkte neu zu für die nächste Runde
+                    assign_points()
+                    
+                    iteration_count += 1
+                    # st.write(f"Iteration {iteration_count}: Centroids bewegten sich max. {centroids_moved_dist:.2f}") # Debug-Info
+
+                st.rerun() # App neu laden, um das finale konvergierte Ergebnis zu zeigen
+
+
+        st.write("---")
+
+        # Daten exportieren
+        if not df_raw.empty:
+            csv_data = df_raw.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="⬇️ Gesammelte Daten als CSV exportieren",
+                data=csv_data,
+                file_name=f"kmeans_praesentation_daten_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        st.write("---")
+
         if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True):
             conn = sqlite3.connect("survey_data.db")
             cursor = conn.cursor()
@@ -249,7 +277,11 @@ else:
         df_plot["Typ"] = "Teilnehmer"
         df_plot["Cluster"] = -1
 
-        if st.session_state.km_step == "centroids_set":
+        # Angepasste Titel für den Plot
+        title_text = ""
+        if st.session_state.km_step == "init":
+            title_text = "Warte auf Teilnehmerdaten oder Starte K-Means"
+        elif st.session_state.km_step == "centroids_set":
             title_text = "Schritt 1: Zufällige Centroids gesetzt"
         elif st.session_state.km_step == "points_assigned":
             title_text = "Schritt 2: Punkte den Centroids zugewiesen"
@@ -259,14 +291,17 @@ else:
             title_text = "Schritt 3: Centroids neu berechnet"
             df_plot["Cluster"] = st.session_state.assignments
             df_plot["Typ"] = df_plot["Cluster"].apply(lambda x: f"Gruppe {x+1}")
-        else:
-            title_text = "Warte auf Teilnehmerdaten oder Starte K-Means"
+        elif st.session_state.km_step == "centroids_converged": # Neuer Titel für konvergierten Zustand
+            title_text = "Schritt 4: K-Means konvergiert (optimale Cluster gefunden)"
+            df_plot["Cluster"] = st.session_state.assignments
+            df_plot["Typ"] = df_plot["Cluster"].apply(lambda x: f"Gruppe {x+1}")
+
 
         # --- Basis-Scatter-Plot (Teilnehmerdaten) ---
         fig = go.Figure()
 
         if not df_plot.empty:
-            if st.session_state.km_step in ["points_assigned", "centroids_moved"]:
+            if st.session_state.km_step in ["points_assigned", "centroids_moved", "centroids_converged"]: # Angepasst
                 for cluster_id in range(k_value):
                     cluster_df = df_plot[df_plot["Cluster"] == cluster_id]
                     if not cluster_df.empty:
@@ -296,6 +331,7 @@ else:
                     current_c = st.session_state.centroids.iloc[i]
                     prev_c = st.session_state.prev_centroids.iloc[i] if not st.session_state.prev_centroids.empty else None
 
+                    # Bewegungslinien und alte Centroids nur zeigen, wenn wir Centroids bewegen
                     if st.session_state.km_step == "centroids_moved" and prev_c is not None and \
                        (prev_c["Kaffee"] != current_c["Kaffee"] or prev_c["Reisezeit"] != current_c["Reisezeit"]):
                         fig.add_trace(go.Scatter(
@@ -315,6 +351,7 @@ else:
                             showlegend=False
                         ))
 
+                    # Aktuelle Centroids
                     marker_symbol = 'x' if st.session_state.km_step in ["centroids_set", "points_assigned"] else 'diamond'
                     fig.add_trace(go.Scatter(
                         x=[current_c["Kaffee"]],
@@ -340,7 +377,8 @@ else:
         st.plotly_chart(fig, use_container_width=True)
 
     # --- TABELLARISCHE AUSWERTUNG NACH DEM CLUSTERING ---
-    if len(df_raw) >= k_value and st.session_state.km_step in ["points_assigned", "centroids_moved"]:
+    # Nur anzeigen, wenn Cluster zugewiesen oder konvergiert sind
+    if len(df_raw) >= k_value and st.session_state.km_step in ["points_assigned", "centroids_moved", "centroids_converged"]:
         st.write("---")
         st.subheader("👥 Wer gehört zu welcher Gruppe?")
 
