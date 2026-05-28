@@ -272,29 +272,33 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
         st.write("---")
 
-# --- NEU: DATEN EXPORTIEREN MIT/OHNE CLUSTER ---
+        # --- DATEN EXPORTIEREN MIT/OHNE CLUSTER ---
         if not df_raw.empty:
-            df_to_export = df_raw.copy()
+            df_to_export = df_raw.copy() # Startet mit den Originaldaten
+
             file_name_suffix = ""
 
             # Checkbox nur anzeigen, wenn Cluster-Zuweisungen verfügbar sind
+            # und die Anzahl der Zuweisungen der aktuellen Anzahl der Rohdatenpunkte entspricht
             cluster_assignments_available = (
-                len(st.session_state.assignments) == len(df_raw) and 
+                st.session_state.assignments.size > 0 and # Prüft, ob das Array überhaupt Elemente enthält
+                st.session_state.assignments.size == len(df_raw) and # WICHTIG: Stimmt die Anzahl der Zuweisungen mit der Anzahl der Datenpunkte überein?
                 st.session_state.km_step in ["points_assigned", "centroids_moved", "centroids_converged"]
             )
 
+            # Die Checkbox und die Logik darum herum werden nur ausgeführt, wenn cluster_assignments_available True ist
+            include_cluster_in_export = False # Default-Wert, falls Checkbox nicht angezeigt wird
             if cluster_assignments_available:
+                # Da st.checkbox einen Wert zurückgibt, muss es immer ausgeführt werden, 
+                # wenn die Bedingungen für die Anzeige erfüllt sind.
                 include_cluster_in_export = st.checkbox(
                     "Finalen Cluster in Exportdatei einschließen?", 
                     value=True, # Standardmäßig aktiviert, wenn verfügbar
                     help="Fügt eine Spalte mit der zugewiesenen Gruppe (Cluster) hinzu."
                 )
-            else:
-                include_cluster_in_export = False # Kann nicht eingeschlossen werden, wenn nicht vorhanden
-
-            if include_cluster_in_export:
+            
+            if include_cluster_in_export: # Hier prüfen, ob die Checkbox aktiviert ist (oder der Default-True-Fall)
                 df_to_export['Finaler Cluster'] = st.session_state.assignments
-                # Optional: Cluster-Nummer auf 1-basiert und lesbarer machen
                 df_to_export['Finaler Cluster'] = df_to_export['Finaler Cluster'].apply(lambda x: f"Gruppe {x+1}")
                 file_name_suffix = "_mit_cluster"
 
