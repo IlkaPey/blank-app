@@ -218,18 +218,6 @@ else:
         
         st.write("---") # Trennlinie
 
-        # --- NEU: DATEN EXPORTIEREN ---
-        if not df_raw.empty: # Nur anzeigen, wenn Daten vorhanden sind
-            csv_data = df_raw.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="⬇️ Gesammelte Daten als CSV exportieren",
-                data=csv_data,
-                file_name=f"kmeans_praesentation_daten_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        st.write("---") # Trennlinie
-
         if len(df_raw) < k_value:
             st.warning(f"Warte auf mindestens {k_value} Teilnehmerpunkte, um K-Means starten zu können.")
             st.session_state.km_step = "init"
