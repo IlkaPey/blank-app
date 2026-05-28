@@ -310,6 +310,7 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 mime="text/csv",
                 use_container_width=True
             )
+            
         st.write("---")
 
         if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True):
