@@ -201,20 +201,16 @@ else:
         # ... (dein Code bis zum Button "🚀 K-Means automatisch konvergieren lassen") ...
 
         # --- NEU: AUTO-ITERATION BUTTON ---
-        # disabled_auto_btn muss prüfen, ob wir überhaupt starten können, also Centroids gesetzt sind.
         disabled_auto_btn = (st.session_state.km_step == "init") or len(df_raw) < k_value
 
         if st.button("🚀 K-Means automatisch konvergieren lassen", use_container_width=True, disabled=disabled_auto_btn):
-            # Sicherstellen, dass wir einen gültigen Startzustand haben
             if st.session_state.km_step == "init":
                 st.error("Bitte zuerst die Centroids initialisieren (Schritt 1).")
-                # Kein rerun hier, da der Fehler angezeigt werden soll
             else:
                 iteration_count = 0
                 max_iterations = 100 # Sicherheitslimit
                 
                 # Wenn wir direkt nach "Zentren setzen" starten, führe die erste Zuweisung hier aus.
-                # Wichtig: KEIN st.rerun() hier, sonst würde die Schleife nie starten.
                 if st.session_state.km_step == "centroids_set":
                     assign_points() # Dadurch wird st.session_state.assignments und km_step aktualisiert
                 
@@ -222,15 +218,22 @@ else:
                 while True:
                     old_centroids = st.session_state.centroids.copy()
                     
+                    # DEBUG-Ausgabe: Centroids vor der Bewegung
+                    st.write(f"DEBUG Iteration {iteration_count+1}: Centroids VOR Bewegung: {old_centroids.values.tolist()}")
+
                     # 1. Centroids verschieben
                     move_centroids() # Aktualisiert km_step zu "centroids_moved"
                     
                     # 2. Prüfe auf Konvergenz
                     # Berechnung der maximalen Bewegung eines Centroids
+                    # Sicherstellen, dass old_centroids und st.session_state.centroids nicht leer sind
                     if not st.session_state.centroids.empty and not old_centroids.empty:
                         centroids_moved_dist = np.sqrt(((st.session_state.centroids - old_centroids)**2).sum(axis=1)).max()
-                    else: # Falls ein Centroid leer geworden ist oder Initialisierung noch nicht perfekt war
-                        centroids_moved_dist = float('inf') # Zwingt weitere Iteration
+                    else:
+                        centroids_moved_dist = float('inf') # Falls unerwartet leer, weiter iterieren
+
+                    st.write(f"DEBUG Iteration {iteration_count+1}: Centroids NACH Bewegung: {st.session_state.centroids.values.tolist()}")
+                    st.write(f"DEBUG Iteration {iteration_count+1}: Max. Bewegung: {centroids_moved_dist:.4f}, Threshold: {convergence_threshold}")
 
                     if centroids_moved_dist < convergence_threshold or iteration_count >= max_iterations:
                         st.session_state.km_step = "centroids_converged" # Neuer Zustand
@@ -242,6 +245,7 @@ else:
 
                     # 3. Punkte neu zuweisen für die nächste Iteration
                     assign_points() # Aktualisiert km_step zu "points_assigned"
+                    st.write(f"DEBUG Iteration {iteration_count+1}: Zuweisungen nach diesem Schritt: {st.session_state.assignments.tolist()}")
 
                     iteration_count += 1
                     # st.write(f"Iteration {iteration_count}: Centroids bewegten sich max. {centroids_moved_dist:.2f}") # Debug-Info
