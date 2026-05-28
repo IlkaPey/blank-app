@@ -326,19 +326,6 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
             st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
             st.rerun()
 
-        if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True):
-            conn = sqlite3.connect("survey_data.db")
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM responses")
-            conn.commit()
-            conn.close()
-            st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
-            st.session_state.assignments = np.array([])
-            st.session_state.km_step = "init"
-            st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
-            st.rerun()
-
-
     with col_plot:
         color_palette = px.colors.qualitative.Plotly
         if k_value > len(color_palette):
