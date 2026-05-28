@@ -112,6 +112,13 @@ else:
     df_raw = pd.read_sql_query("SELECT name AS Name, val_x AS Kaffee, val_y AS Reisezeit FROM responses", conn)
     conn.close()
 
+    #Daten skalieren für K-Means und Plotting ---
+    df_data_for_kmeans = df_raw.copy()
+    # Hier die Skalierung anwenden: Reisezeit / 10
+    df_data_for_kmeans['Reisezeit'] = df_data_for_kmeans['Reisezeit'] / 10.0 
+    # Optional: Den Kaffeewert auch als Float behandeln, damit er zur Reisezeit passt, falls du dort auch Dezimalwerte hast
+    df_data_for_kmeans['Kaffee'] = df_data_for_kmeans['Kaffee'].astype(float)
+
     # Session State für K-Means initialisieren
     if "km_step" not in st.session_state:
         st.session_state.km_step = "init"
