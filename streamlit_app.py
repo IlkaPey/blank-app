@@ -43,7 +43,7 @@ if view == "📱 Teilnehmer: Fragebogen":
     with st.form("survey_form", clear_on_submit=True):
         user_name = st.text_input("Dein Name / Kürzel:", placeholder="z. B. Anna oder Gast_1")
         # Sinnvolle Min/Max-Werte und Schritte für die Fragen
-        ans_x = st.slider(FRAGE_1, 0.0, 10.0, 3.0, step=0.5) # Kaffee kann auch 0 sein, halbe Tassen
+        ans_x = st.slider(FRAGE_1, 0.0, 10.0, 3.0, step=1) # Kaffee kann auch 0 sein, halbe Tassen
         ans_y = st.slider(FRAGE_2, 0, 90, 20, step=5)       # Reisezeit in Minuten
 
         submitted = st.form_submit_button("Antwort absenden")
