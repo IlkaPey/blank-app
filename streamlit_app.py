@@ -96,7 +96,15 @@ else:
             st.session_state.km_step = "init"
         
         # --- K-Means Schritte ---
+        st.write(f"DEBUG: Aktueller km_step: `{st.session_state.km_step}`")
+        # Im 'col_control' Block, direkt nach der Definition von k_value und st.write(f"Teilnehmende Personen: ...")
+        st.write(f"DEBUG: Aktueller km_step: `{st.session_state.km_step}`")
+        if not st.session_state.centroids.empty:
+            st.write("DEBUG: Centroids (Kaffee, Reisezeit):")
+            st.dataframe(st.session_state.centroids)
+        st.write("---") # Zur besseren optischen Trennung
         
+
         # Zentren zufällig setzen
         disabled_init_btn = (len(df_raw) < k_value) or (st.session_state.km_step not in ["init", "centroids_moved"])
         if st.button("1. Zentren zufällig setzen 📍", use_container_width=True, disabled=disabled_init_btn):
