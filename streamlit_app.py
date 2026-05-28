@@ -272,16 +272,53 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
         st.write("---")
 
+# --- NEU: DATEN EXPORTIEREN MIT/OHNE CLUSTER ---
         if not df_raw.empty:
-            csv_data = df_raw.to_csv(index=False).encode('utf-8')
+            df_to_export = df_raw.copy()
+            file_name_suffix = ""
+
+            # Checkbox nur anzeigen, wenn Cluster-Zuweisungen verfügbar sind
+            cluster_assignments_available = (
+                len(st.session_state.assignments) == len(df_raw) and 
+                st.session_state.km_step in ["points_assigned", "centroids_moved", "centroids_converged"]
+            )
+
+            if cluster_assignments_available:
+                include_cluster_in_export = st.checkbox(
+                    "Finalen Cluster in Exportdatei einschließen?", 
+                    value=True, # Standardmäßig aktiviert, wenn verfügbar
+                    help="Fügt eine Spalte mit der zugewiesenen Gruppe (Cluster) hinzu."
+                )
+            else:
+                include_cluster_in_export = False # Kann nicht eingeschlossen werden, wenn nicht vorhanden
+
+            if include_cluster_in_export:
+                df_to_export['Finaler Cluster'] = st.session_state.assignments
+                # Optional: Cluster-Nummer auf 1-basiert und lesbarer machen
+                df_to_export['Finaler Cluster'] = df_to_export['Finaler Cluster'].apply(lambda x: f"Gruppe {x+1}")
+                file_name_suffix = "_mit_cluster"
+
+            csv_data = df_to_export.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="⬇️ Gesammelte Daten als CSV exportieren",
+                label=f"⬇️ Daten{file_name_suffix} als CSV exportieren",
                 data=csv_data,
-                file_name=f"kmeans_praesentation_daten_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                file_name=f"kmeans_praesentation_daten_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{file_name_suffix}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
         st.write("---")
+
+        if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True):
+            conn = sqlite3.connect("survey_data.db")
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM responses")
+            conn.commit()
+            conn.close()
+            st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
+            st.session_state.assignments = np.array([])
+            st.session_state.km_step = "init"
+            st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
+            st.rerun()
 
         if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True):
             conn = sqlite3.connect("survey_data.db")
