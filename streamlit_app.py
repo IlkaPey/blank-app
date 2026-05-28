@@ -313,9 +313,10 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
             
         st.write("---")
 
-        if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True):
+        if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True, key="reset_button_overall"):
             conn = sqlite3.connect("survey_data.db")
-            cursor = conn.cursor()
+            cursor = conn.c
+            ursor()
             cursor.execute("DELETE FROM responses")
             conn.commit()
             conn.close()
