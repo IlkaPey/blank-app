@@ -21,6 +21,39 @@ PRESENTER_PASSWORD = st.secrets.get("presenter_password", "clustering")
 
 st.set_page_config(layout="wide")
 
+# --- ROLLEN-MANAGEMENT ---
+query_params = st.query_params
+# Wichtig: st.query_params.get gibt eine Liste zurück, daher [0] für den ersten Wert
+app_role = query_params.get("role", ["participant"])[0] 
+
+# --- DEBUG-AUSGABEN START ---
+st.sidebar.subheader("DEBUG Informationen:")
+st.sidebar.write(f"1. Roh-Query-Parameter: {query_params}")
+st.sidebar.write(f"2. Initial abgeleitete Rolle: {app_role}")
+# --- DEBUG-AUSGABEN ENDE ---
+
+
+view = "📱 Teilnehmer: Fragebogen" # Standardwert
+
+if app_role == "presenter":
+    st.sidebar.title("Präsentator-Login")
+    password_input = st.sidebar.text_input("Passwort eingeben:", type="password", key="presenter_pw")
+    
+    # --- DEBUG-AUSGABEN START ---
+    st.sidebar.write(f"3. Präsentator-Modus erkannt. Erwartetes Passwort: '{PRESENTER_PASSWORD}'")
+    st.sidebar.write(f"4. Eingegebenes Passwort: '{password_input}'")
+    # --- DEBUG-AUSGABEN ENDE ---
+
+    if password_input == PRESENTER_PASSWORD:
+        st.sidebar.success("Angemeldet als Präsentator.")
+        view = st.sidebar.radio("Ansicht wählen:", ["📱 Teilnehmer: Fragebogen", "📺 Präsentator: Live-Schritt-Demo"], key="presenter_view_radio") # key hinzugefügt
+    else:
+        st.sidebar.error("Falsches Passwort für Präsentator.")
+        app_role = "participant" # Fallback auf Teilnehmer-Rolle
+        # --- DEBUG-AUSGABEN START ---
+        st.sidebar.write(f"5. Falsches Passwort, Rolle zurückgesetzt auf: {app_role}")
+# --- DEBUG-AUSGABEN ENDE ---
+
 
 # --- DATENBANK INITIALISIEREN ---
 def init_db():
