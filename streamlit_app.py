@@ -4,7 +4,9 @@ import numpy as np
 import sqlite3
 import plotly.express as px
 import plotly.graph_objects as go
-import random # Für np.random.choice und die simulated_data
+import random
+import qrcode # <-- NEU: Import für QR-Code
+from io import BytesIO # <-- NEU: Für das Speichern des QR-Codes im Speicher
 
 
 # --- FRAGEN-KONFIGURATION ---
@@ -12,10 +14,10 @@ FRAGE_1 = "Wie viele Tassen Kaffee trinkst du täglich?"
 FRAGE_2 = "Wieviele Minuten brauchst du von zu Hause ins Büro?"
 FRAGE_2_SKALIERT_LABEL = f"{FRAGE_2} (Skaliert: Original / 10)" 
 
-# --- PRÄSENTATOR PASSWORT (Optional, aber empfohlen für Streamlit Cloud) ---
-# Für Streamlit Cloud: Diesen Wert in .streamlit/secrets.toml speichern:
-# presenter_password = "mein_geheimes_passwort"
-PRESENTER_PASSWORD = st.secrets.get("presenter_password", "clustering") # Standardwert für lokale Tests
+
+# --- PRÄSENTATOR PASSWORT ---
+PRESENTER_PASSWORD = st.secrets.get("presenter_password", "demopassword")
+
 
 st.set_page_config(layout="wide")
 
@@ -35,11 +37,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Datenbank bei jedem App-Start initialisieren
 init_db()
 
 
-# --- NEUE FUNKTION: ZUSÄTZLICHE SIMULIERTE DATEN GENERIEREN UND EINFÜGEN ---
+# --- FUNKTION: ZUSÄTZLICHE SIMULIERTE DATEN GENERIEREN UND EINFÜGEN ---
 def generate_and_insert_simulated_data(num_points_per_cluster=5):
     conn = sqlite3.connect("survey_data.db")
     cursor = conn.cursor()
@@ -58,8 +59,7 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
             parts = res[0].split('_')
             if len(parts) > 1 and parts[-1].isdigit():
                 current_max_sim_id = int(parts[-1])
-    except Exception as e:
-        st.warning(f"Fehler beim Ermitteln der max. Sim ID: {e}")
+    except Exception:
         pass
 
     sim_data_to_insert = []
@@ -82,11 +82,29 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
     st.success(f"{len(sim_data_to_insert)} simulierte Datenpunkte hinzugefügt!")
 
 
+# --- QR-CODE GENERATOR FUNKTION ---
+def generate_qr_code(url):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # QR-Code als PNG-Bytes im Speicher speichern
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 # --- ROLLEN-MANAGEMENT ---
 query_params = st.query_params
-app_role = query_params.get("role", "participant") # Standard: 'participant'
+app_role = query_params.get("role", ["participant"])[0]
 
-# Initialisiere 'view' Variable für die App-Logik
 view = "📱 Teilnehmer: Fragebogen" # Standardwert
 
 if app_role == "presenter":
@@ -98,12 +116,13 @@ if app_role == "presenter":
         view = st.sidebar.radio("Ansicht wählen:", ["📱 Teilnehmer: Fragebogen", "📺 Präsentator: Live-Schritt-Demo"])
     else:
         st.sidebar.error("Falsches Passwort für Präsentator.")
-        app_role = "participant" # Fallback auf Teilnehmer-Rolle
+        app_role = "participant"
+
 
 # ==============================================================================
 # VIEW 1: TEILNEHMER-EINGABE (immer sichtbar für Teilnehmer-Rolle)
 # ==============================================================================
-if app_role == "participant" or view == "📱 Teilnehmer: Fragebogen": # Teilnehmer sieht immer nur das Formular
+if app_role == "participant" or view == "📱 Teilnehmer: Fragebogen":
     st.title("Inklusive Daten-Eingabe 🗳️")
     st.write("Bitte gib deinen Namen an und beantworte die Fragen:")
 
@@ -159,11 +178,40 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
     with col_control:
         st.subheader("⚙️ Steuerung")
-        k_value = st.slider("Anzahl der Cluster (k):", min_value=2, max_value=5, value=3, help="Die Anzahl der Gruppen, die der Algorithmus finden soll.")
+        k_value = st.slider("Anzahl der Cluster (k):", min_value=2, max_value=5, value=3, help="Die Anzahl der Gruppen, die der Algorithmus finden soll.", key="k_slider")
         
         st.write(f"Teilnehmende Personen: **{len(df_raw)}**")
 
-        if st.button("➕ Zusätzliche (simulierte) Daten hinzufügen", use_container_width=True):
+        # --- QR Code anzeigen ---
+        st.write("---")
+        st.subheader("🔗 Link & QR-Code für Teilnehmer")
+        
+        # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
+        # Wenn Streamlit Cloud, ist es die öffentliche URL.
+        # Wenn lokal, ist es localhost oder die Netzwerk-IP.
+        base_url = st.get_url()
+        # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
+        # if '?' in base_url:
+        #     base_url = base_url.split('?')[0] # Schneidet alle Parameter ab
+        # Eine robustere Lösung: Den Parameter manipulieren
+        from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+        parsed_url = urlparse(base_url)
+        query_dict = parse_qs(parsed_url.query)
+        if 'role' in query_dict:
+            del query_dict['role'] # Entferne den role-Parameter
+        participant_query_string = urlencode(query_dict, doseq=True) # Baue Query-String neu ohne 'role'
+        participant_url_parts = parsed_url._replace(query=participant_query_string)
+        participant_url = urlunparse(participant_url_parts)
+
+
+        st.markdown(f"Teilen Sie diesen Link mit den Teilnehmern: [Teilnehmer-Link]({participant_url})")
+        
+        qr_bytes = generate_qr_code(participant_url)
+        st.image(qr_bytes, width=150, caption="QR-Code zur Eingabeseite")
+        st.write("---")
+
+        # --- Button für simulierte Daten ---
+        if st.button("➕ Zusätzliche (simulierte) Daten hinzufügen", use_container_width=True, key="add_simulated_data_btn"):
             generate_and_insert_simulated_data(num_points_per_cluster=5)
             st.rerun()
         
@@ -206,7 +254,7 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
             st.session_state.centroids = pd.DataFrame(new_centroids_data)
             st.session_state.km_step = "centroids_moved"
         
-        convergence_threshold = 0.05
+        convergence_threshold = 0.05 
 
         if len(df_data_for_kmeans) < k_value:
             st.warning(f"Warte auf mindestens {k_value} Teilnehmerpunkte, um K-Means starten zu können.")
@@ -215,7 +263,7 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         # --- K-Means Schritte Buttons ---
         
         disabled_init_btn = (len(df_data_for_kmeans) < k_value) or (st.session_state.km_step not in ["init", "centroids_moved", "centroids_converged"])
-        if st.button("1. Zentren zufällig setzen 📍", use_container_width=True, disabled=disabled_init_btn):
+        if st.button("1. Zentren zufällig setzen 📍", use_container_width=True, disabled=disabled_init_btn, key="init_centroids_btn"):
             if len(df_data_for_kmeans) >= k_value:
                 indices = np.random.choice(df_data_for_kmeans.index, size=k_value, replace=False)
                 st.session_state.centroids = df_data_for_kmeans.loc[indices, ["Kaffee", "Reisezeit"]].reset_index(drop=True)
@@ -225,20 +273,19 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 st.rerun()
 
         disabled_assign_btn = (st.session_state.km_step not in ["centroids_set", "centroids_moved"]) or len(df_data_for_kmeans) < k_value
-        if st.button("2. Punkte dem nächsten Zentrum zuweisen 🔵", use_container_width=True, disabled=disabled_assign_btn):
+        if st.button("2. Punkte dem nächsten Zentrum zuweisen 🔵", use_container_width=True, disabled=disabled_assign_btn, key="assign_points_btn"):
             assign_points()
             st.rerun()
 
         disabled_move_btn = (st.session_state.km_step != "points_assigned") or len(df_data_for_kmeans) < k_value
-        if st.button("3. Zentren neu berechnen (Mittelwert) 📐", use_container_width=True, disabled=disabled_move_btn):
+        if st.button("3. Zentren neu berechnen (Mittelwert) 📐", use_container_width=True, disabled=disabled_move_btn, key="move_centroids_btn"):
             move_centroids()
             st.rerun()
 
         st.write("---")
 
-        # --- AUTO-ITERATION BUTTON ---
         disabled_auto_btn = (st.session_state.km_step == "init") or len(df_data_for_kmeans) < k_value
-        if st.button("🚀 K-Means automatisch konvergieren lassen", use_container_width=True, disabled=disabled_auto_btn):
+        if st.button("🚀 K-Means automatisch konvergieren lassen", use_container_width=True, disabled=disabled_auto_btn, key="auto_converge_btn"):
             if st.session_state.km_step == "init":
                 st.error("Bitte zuerst die Centroids initialisieren (Schritt 1).")
             else:
@@ -272,32 +319,68 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
         st.write("---")
 
+        # --- DATEN IMPORTIEREN ---
+        st.subheader("⬆️ Daten importieren")
+        uploaded_file = st.file_uploader("CSV-Datei hochladen (überschreibt bestehende Daten)", type=["csv"], key="csv_uploader")
+        
+        if uploaded_file is not None:
+            try:
+                imported_df = pd.read_csv(uploaded_file)
+                
+                required_cols = ['Name', 'Kaffee', 'Reisezeit']
+                if not all(col in imported_df.columns for col in required_cols):
+                    st.error(f"Die hochgeladene CSV-Datei muss die Spalten {required_cols} enthalten. Gefundene Spalten: {imported_df.columns.tolist()}")
+                else:
+                    db_df = imported_df[required_cols].copy()
+                    db_df.rename(columns={'Kaffee': 'val_x', 'Reisezeit': 'val_y'}, inplace=True)
+                    
+                    db_df['val_x'] = pd.to_numeric(db_df['val_x'], errors='coerce')
+                    db_df['val_y'] = pd.to_numeric(db_df['val_y'], errors='coerce')
+                    db_df.dropna(subset=['val_x', 'val_y'], inplace=True)
+
+                    if db_df.empty:
+                        st.error("Nach der Validierung und Bereinigung sind keine gültigen Daten mehr zum Importieren vorhanden.")
+                    else:
+                        conn = sqlite3.connect("survey_data.db")
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM responses")
+                        conn.commit()
+                        
+                        db_df.to_sql('responses', conn, if_exists='append', index=False)
+                        conn.close()
+                        
+                        st.success(f"{len(db_df)} Datenpunkte erfolgreich importiert und gespeichert.")
+                        st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
+                        st.session_state.assignments = np.array([])
+                        st.session_state.km_step = "init"
+                        st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
+                        st.rerun()
+            except Exception as e:
+                st.error(f"Fehler beim Lesen oder Verarbeiten der CSV-Datei: {e}")
+        st.write("---")
+        
         # --- DATEN EXPORTIEREN MIT/OHNE CLUSTER ---
         if not df_raw.empty:
-            df_to_export = df_raw.copy() # Startet mit den Originaldaten
+            df_to_export = df_raw.copy()
 
             file_name_suffix = ""
 
-            # Checkbox nur anzeigen, wenn Cluster-Zuweisungen verfügbar sind
-            # und die Anzahl der Zuweisungen der aktuellen Anzahl der Rohdatenpunkte entspricht
             cluster_assignments_available = (
-                st.session_state.assignments.size > 0 and # Prüft, ob das Array überhaupt Elemente enthält
-                st.session_state.assignments.size == len(df_raw) and # WICHTIG: Stimmt die Anzahl der Zuweisungen mit der Anzahl der Datenpunkte überein?
+                st.session_state.assignments.size > 0 and 
+                st.session_state.assignments.size == len(df_raw) and
                 st.session_state.km_step in ["points_assigned", "centroids_moved", "centroids_converged"]
             )
 
-            # Die Checkbox und die Logik darum herum werden nur ausgeführt, wenn cluster_assignments_available True ist
-            include_cluster_in_export = False # Default-Wert, falls Checkbox nicht angezeigt wird
+            include_cluster_in_export = False
             if cluster_assignments_available:
-                # Da st.checkbox einen Wert zurückgibt, muss es immer ausgeführt werden, 
-                # wenn die Bedingungen für die Anzeige erfüllt sind.
                 include_cluster_in_export = st.checkbox(
                     "Finalen Cluster in Exportdatei einschließen?", 
-                    value=True, # Standardmäßig aktiviert, wenn verfügbar
-                    help="Fügt eine Spalte mit der zugewiesenen Gruppe (Cluster) hinzu."
+                    value=True,
+                    help="Fügt eine Spalte mit der zugewiesenen Gruppe (Cluster) hinzu.",
+                    key="include_cluster_checkbox"
                 )
             
-            if include_cluster_in_export: # Hier prüfen, ob die Checkbox aktiviert ist (oder der Default-True-Fall)
+            if include_cluster_in_export:
                 df_to_export['Finaler Cluster'] = st.session_state.assignments
                 df_to_export['Finaler Cluster'] = df_to_export['Finaler Cluster'].apply(lambda x: f"Gruppe {x+1}")
                 file_name_suffix = "_mit_cluster"
@@ -308,14 +391,15 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 data=csv_data,
                 file_name=f"kmeans_praesentation_daten_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{file_name_suffix}.csv",
                 mime="text/csv",
-                use_container_width=True
+                use_container_width=True,
+                key="download_csv_btn"
             )
-            
         st.write("---")
 
+        # --- DATEN UND ALGORITHMUS ZURÜCKSETZEN ---
         if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True, key="reset_button_overall"):
             conn = sqlite3.connect("survey_data.db")
-            cursor = conn.cursor() # <--- KORRIGIERT!
+            cursor = conn.cursor()
             cursor.execute("DELETE FROM responses")
             conn.commit()
             conn.close()
@@ -324,6 +408,7 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
             st.session_state.km_step = "init"
             st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
             st.rerun()
+
 
     with col_plot:
         color_palette = px.colors.qualitative.Plotly
@@ -449,8 +534,11 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 st.markdown(f"### <span style='color:{colors_for_clusters[c]}'>Gruppe {c+1}</span>", unsafe_allow_html=True)
                 
                 members_indices = np.where(st.session_state.assignments == c)[0]
-                members_names = df_raw.loc[members_indices, "Name"].tolist() # df_raw.loc[members_indices] um den Index korrekt zu verwenden
-
+                if not df_raw.empty and len(members_indices) > 0:
+                     members_names = df_raw.loc[members_indices, "Name"].tolist()
+                else:
+                    members_names = []
+                
                 if members_names:
                     cluster_data_avg = df_for_avg_calc[df_for_avg_calc["Cluster"] == c]
                     avg_coffee = cluster_data_avg["Kaffee"].mean()
