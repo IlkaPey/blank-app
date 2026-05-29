@@ -16,7 +16,7 @@ FRAGE_2_SKALIERT_LABEL = f"{FRAGE_2} (Skaliert: Original / 10)"
 
 
 # --- PRÄSENTATOR PASSWORT ---
-PRESENTER_PASSWORD = st.secrets.get("presenter_password", "demopassword")
+PRESENTER_PASSWORD = st.secrets.get("presenter_password", "clustering")
 
 
 st.set_page_config(layout="wide")
