@@ -228,26 +228,26 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         st.write(f"Teilnehmende Personen: **{len(df_raw)}**")
 
         # --- QR Code anzeigen ---
-        st.write("---")
-        st.subheader("🔗 Link & QR-Code für Teilnehmer")
+        # st.write("---")
+        # st.subheader("🔗 Link & QR-Code für Teilnehmer")
         
-        # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
-        # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
-        base_url = st.get_url()
-        parsed_url = urlparse(base_url)
-        query_dict = parse_qs(parsed_url.query)
-        if 'role' in query_dict:
-            del query_dict['role'] # Entferne den role-Parameter
-        participant_query_string = urlencode(query_dict, doseq=True) # Baue Query-String neu ohne 'role'
-        participant_url_parts = parsed_url._replace(query=participant_query_string)
-        participant_url = urlunparse(participant_url_parts)
+        # # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
+        # # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
+        # base_url = st.get_url()
+        # parsed_url = urlparse(base_url)
+        # query_dict = parse_qs(parsed_url.query)
+        # if 'role' in query_dict:
+        #     del query_dict['role'] # Entferne den role-Parameter
+        # participant_query_string = urlencode(query_dict, doseq=True) # Baue Query-String neu ohne 'role'
+        # participant_url_parts = parsed_url._replace(query=participant_query_string)
+        # participant_url = urlunparse(participant_url_parts)
 
 
-        st.markdown(f"Teilen Sie diesen Link mit den Teilnehmern: [Teilnehmer-Link]({participant_url})")
+        # st.markdown(f"Teilen Sie diesen Link mit den Teilnehmern: [Teilnehmer-Link]({participant_url})")
         
-        qr_bytes = generate_qr_code(participant_url)
-        st.image(qr_bytes, width=150, caption="QR-Code zur Eingabeseite")
-        st.write("---")
+        # qr_bytes = generate_qr_code(participant_url)
+        # st.image(qr_bytes, width=150, caption="QR-Code zur Eingabeseite")
+        # st.write("---")
 
         # --- Button für simulierte Daten ---
         if st.button("➕ Zusätzliche (simulierte) Daten hinzufügen", use_container_width=True, key="add_simulated_data_btn"):
