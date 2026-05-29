@@ -87,23 +87,23 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
     st.success(f"{len(sim_data_to_insert)} simulierte Datenpunkte hinzugefügt!")
 
 
-# --- QR-CODE GENERATOR FUNKTION ---
-def generate_qr_code(url):
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
+# # --- QR-CODE GENERATOR FUNKTION ---
+# def generate_qr_code(url):
+#     qr = qrcode.QRCode(
+#         version=1,
+#         error_correction=qrcode.constants.ERROR_CORRECT_L,
+#         box_size=10,
+#         border=4,
+#     )
+#     qr.add_data(url)
+#     qr.make(fit=True)
 
-    img = qr.make_image(fill_color="black", back_color="white")
+#     img = qr.make_image(fill_color="black", back_color="white")
     
-    # QR-Code als PNG-Bytes im Speicher speichern
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+#     # QR-Code als PNG-Bytes im Speicher speichern
+#     buf = BytesIO()
+#     img.save(buf, format="PNG")
+#     return buf.getvalue()
 
 
 # --- ROLLEN-MANAGEMENT ---
@@ -233,7 +233,7 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         
         # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
         # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
-        base_url = st.get_url()
+        # base_url = st.get_url()
         parsed_url = urlparse(base_url)
         query_dict = parse_qs(parsed_url.query)
         if 'role' in query_dict:
