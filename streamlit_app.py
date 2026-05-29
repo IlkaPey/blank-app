@@ -235,18 +235,18 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
         #base_url = st.get_url()
         base_url = st.get_url()
-        # except AttributeError:
-        #     # Fallback für ältere Streamlit-Versionen
-        #     # Dies ist ein Workaround und kann in zukünftigen Streamlit-Versionen brechen
-        #     from streamlit.web.server.websocket_headers import _get_websocket_headers
-        #     headers = _get_websocket_headers()
-        #     if headers and "X-Forwarded-Proto" in headers and "X-Forwarded-Host" in headers:
-        #         base_url = f"{headers['X-Forwarded-Proto']}://{headers['X-Forwarded-Host']}"
-        #         if headers.get("X-Forwarded-Port") and headers.get("X-Forwarded-Port") != "443": # Default HTTPS Port
-        #             base_url += f":{headers['X-Forwarded-Port']}"
-        #     else:
-        #         st.warning("Konnte URL nicht zuverlässig ermitteln. Zeige Placeholder.")
-        #         base_url = "http://localhost:8501" # Fallback auf Localhost, wenn nichts ermittelt werden kann
+        except AttributeError:
+            # Fallback für ältere Streamlit-Versionen
+            # Dies ist ein Workaround und kann in zukünftigen Streamlit-Versionen brechen
+            from streamlit.web.server.websocket_headers import _get_websocket_headers
+            headers = _get_websocket_headers()
+            if headers and "X-Forwarded-Proto" in headers and "X-Forwarded-Host" in headers:
+                base_url = f"{headers['X-Forwarded-Proto']}://{headers['X-Forwarded-Host']}"
+                if headers.get("X-Forwarded-Port") and headers.get("X-Forwarded-Port") != "443": # Default HTTPS Port
+                    base_url += f":{headers['X-Forwarded-Port']}"
+            else:
+                st.warning("Konnte URL nicht zuverlässig ermitteln. Zeige Placeholder.")
+                base_url = "http://localhost:8501" # Fallback auf Localhost, wenn nichts ermittelt werden kann
         parsed_url = urlparse(base_url)
         query_dict = parse_qs(parsed_url.query)
         if 'role' in query_dict:
