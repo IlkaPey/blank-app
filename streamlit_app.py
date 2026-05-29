@@ -234,7 +234,19 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
         # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
         #base_url = st.get_url()
-        base_url = st.get_url()
+        try:
+            # 1. Versuch: st.get_url() verwenden (benötigt Streamlit >= 1.25.0)
+            base_url = st.get_url()
+
+            # Wenn st.get_url() funktioniert hat, URL parsen
+            parsed_url = urlparse(base_url)
+            query_dict = parse_qs(parsed_url.query)
+            if 'role' in query_dict:
+                del query_dict['role'] # Entferne den role-Parameter
+            participant_query_string = urlencode(query_dict, doseq=True)
+            participant_url_parts = parsed_url._replace(query=participant_query_string)
+            participant_url = urlunparse(participant_url_parts)
+            
         except AttributeError:
             # Fallback für ältere Streamlit-Versionen
             # Dies ist ein Workaround und kann in zukünftigen Streamlit-Versionen brechen
