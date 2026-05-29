@@ -4,9 +4,10 @@ import numpy as np
 import sqlite3
 import plotly.express as px
 import plotly.graph_objects as go
-import random
-import qrcode # <-- NEU: Import für QR-Code
-from io import BytesIO # <-- NEU: Für das Speichern des QR-Codes im Speicher
+import random # Für np.random.choice und die simulated_data
+import qrcode # Für QR-Code-Generierung
+from io import BytesIO # Für das Speichern des QR-Codes im Speicher
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode # Für URL-Parameter-Handling
 
 
 # --- FRAGEN-KONFIGURATION ---
@@ -16,44 +17,12 @@ FRAGE_2_SKALIERT_LABEL = f"{FRAGE_2} (Skaliert: Original / 10)"
 
 
 # --- PRÄSENTATOR PASSWORT ---
-PRESENTER_PASSWORD = st.secrets.get("presenter_password", "clustering")
+# Für Streamlit Cloud: Diesen Wert in .streamlit/secrets.toml speichern:
+# presenter_password = "dein_geheimes_passwort"
+PRESENTER_PASSWORD = st.secrets.get("presenter_password", "demopassword") # Standardwert für lokale Tests
 
 
 st.set_page_config(layout="wide")
-
-# # --- ROLLEN-MANAGEMENT ---
-# query_params = st.query_params
-# # Wichtig: st.query_params.get gibt eine Liste zurück, daher [0] für den ersten Wert
-# app_role = query_params.get("role", "participant") 
-
-
-# --- DEBUG-AUSGABEN START ---
-st.sidebar.subheader("DEBUG Informationen:")
-st.sidebar.write(f"1. Roh-Query-Parameter: {query_params}")
-st.sidebar.write(f"2. Initial abgeleitete Rolle: {app_role}")
-# --- DEBUG-AUSGABEN ENDE ---
-
-
-view = "📱 Teilnehmer: Fragebogen" # Standardwert
-
-if app_role == "presenter":
-    st.sidebar.title("Präsentator-Login")
-    password_input = st.sidebar.text_input("Passwort eingeben:", type="password", key="presenter_pw")
-    
-    # --- DEBUG-AUSGABEN START ---
-    #st.sidebar.write(f"3. Präsentator-Modus erkannt. Erwartetes Passwort: '{PRESENTER_PASSWORD}'")
-    #st.sidebar.write(f"4. Eingegebenes Passwort: '{password_input}'")
-    # --- DEBUG-AUSGABEN ENDE ---
-
-    if password_input == PRESENTER_PASSWORD:
-        st.sidebar.success("Angemeldet als Präsentator.")
-        view = st.sidebar.radio("Ansicht wählen:", ["📱 Teilnehmer: Fragebogen", "📺 Präsentator: Live-Schritt-Demo"], key="presenter_view_radio") # key hinzugefügt
-    else:
-        st.sidebar.error("Falsches Passwort für Präsentator.")
-        app_role = "participant" # Fallback auf Teilnehmer-Rolle
-        # --- DEBUG-AUSGABEN START ---
-        st.sidebar.write(f"5. Falsches Passwort, Rolle zurückgesetzt auf: {app_role}")
-# --- DEBUG-AUSGABEN ENDE ---
 
 
 # --- DATENBANK INITIALISIEREN ---
@@ -71,6 +40,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Datenbank bei jedem App-Start initialisieren
 init_db()
 
 
@@ -79,6 +49,7 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
     conn = sqlite3.connect("survey_data.db")
     cursor = conn.cursor()
     
+    # Beispiel-Cluster-Zentren für simulierte Daten (unskalierte Originalwerte)
     sim_clusters = [
         {"name_prefix": "Sim_A", "mean_coffee": 1, "mean_commute": 15, "std_coffee": 0.5, "std_commute": 5},
         {"name_prefix": "Sim_B", "mean_coffee": 6, "mean_commute": 20, "std_coffee": 1, "std_commute": 7},
@@ -137,20 +108,59 @@ def generate_qr_code(url):
 
 # --- ROLLEN-MANAGEMENT ---
 query_params = st.query_params
-app_role = query_params.get("role", ["participant"])[0]
+app_role = query_params.get("role", "participant") # st.query_params.get gibt direkt den Wert zurück
 
-view = "📱 Teilnehmer: Fragebogen" # Standardwert
+# Initialisiere 'current_selected_view' im Session State für den Präsentator
+if "current_selected_view" not in st.session_state:
+    st.session_state.current_selected_view = "📱 Teilnehmer: Fragebogen"
+
+# Bestimme die anzuzeigende Ansicht
+view = st.session_state.current_selected_view # Standardmäßig die zuletzt gewählte Ansicht
 
 if app_role == "presenter":
     st.sidebar.title("Präsentator-Login")
     password_input = st.sidebar.text_input("Passwort eingeben:", type="password", key="presenter_pw")
     
+    # Debug-Informationen (können später entfernt werden)
+    # st.sidebar.write(f"DEBUG: Erwartetes Passwort: '{PRESENTER_PASSWORD}'")
+    # st.sidebar.write(f"DEBUG: Eingegebenes Passwort: '{password_input}'")
+
     if password_input == PRESENTER_PASSWORD:
         st.sidebar.success("Angemeldet als Präsentator.")
-        view = st.sidebar.radio("Ansicht wählen:", ["📱 Teilnehmer: Fragebogen", "📺 Präsentator: Live-Schritt-Demo"])
+        
+        # Wenn der Präsentator sich gerade erfolgreich angemeldet hat (und der View noch auf 'participant' steht)
+        if st.session_state.current_selected_view == "📱 Teilnehmer: Fragebogen":
+            # Setze die Standardauswahl auf die Präsentator-Demo
+            st.session_state.current_selected_view = "📺 Präsentator: Live-Schritt-Demo"
+            # Ein st.rerun() hier würde den Wechsel sofort nach dem Login zeigen.
+            # Da wir das Radio-Element unten sowieso rendern, kann es auch ohne rerun funktionieren,
+            # wenn man es direkt in den index des radio packt.
+            # st.rerun() 
+
+        view_options = ["📱 Teilnehmer: Fragebogen", "📺 Präsentator: Live-Schritt-Demo"]
+        default_index_for_radio = view_options.index(st.session_state.current_selected_view)
+
+        # Die Auswahl des Radio-Buttons aktualisiert st.session_state.current_selected_view
+        st.session_state.current_selected_view = st.sidebar.radio(
+            "Ansicht wählen:",
+            view_options,
+            index=default_index_for_radio, # Setzt den initialen Auswahlwert
+            key="presenter_view_radio"
+        )
+        # 'view' wird für die Rendering-Logik aus dem Session State gelesen
+        view = st.session_state.current_selected_view 
+
     else:
         st.sidebar.error("Falsches Passwort für Präsentator.")
-        app_role = "participant"
+        app_role = "participant" # Fallback auf Teilnehmer-Rolle
+        # Wenn Passwort falsch, auch die Präsentator-View-Auswahl zurücksetzen
+        st.session_state.current_selected_view = "📱 Teilnehmer: Fragebogen"
+        # Und 'view' für die Rendering-Logik wieder auf den Standard setzen
+        view = st.session_state.current_selected_view
+else:
+    # Wenn app_role nicht "presenter" ist (also "participant" ist), 
+    # dann ist die anzuzeigende Ansicht immer das Teilnehmer-Formular.
+    view = "📱 Teilnehmer: Fragebogen"
 
 
 # ==============================================================================
@@ -161,11 +171,11 @@ if app_role == "participant" or view == "📱 Teilnehmer: Fragebogen":
     st.write("Bitte gib deinen Namen an und beantworte die Fragen:")
 
     with st.form("survey_form", clear_on_submit=True):
-        user_name = st.text_input("Dein Name / Kürzel:", placeholder="z. B. Anna oder Gast_1")
-        ans_x = st.slider(FRAGE_1, 0, 10, 3, step=1)
-        ans_y = st.slider(FRAGE_2, 0, 90, 20, step=5)
+        user_name = st.text_input("Dein Name / Kürzel:", placeholder="z. B. Anna oder Gast_1", key="participant_name_input")
+        ans_x = st.slider(FRAGE_1, 0, 10, 3, step=1, key="participant_coffee_slider") # Ganze Tassen Kaffee
+        ans_y = st.slider(FRAGE_2, 0, 90, 20, step=5, key="participant_commute_slider") # Ganze Minuten Reisezeit
 
-        submitted = st.form_submit_button("Antwort absenden")
+        submitted = st.form_submit_button("Antwort absenden", key="participant_submit_button")
 
         if submitted:
             if not user_name.strip():
@@ -192,21 +202,22 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
     conn.close()
 
     # --- DATEN SKALIEREN für K-Means Berechnungen und Plotting ---
+    # Die originalen Daten bleiben in df_raw für die Anzeige im Hover-Text etc.
     df_data_for_kmeans = df_raw.copy()
     if not df_data_for_kmeans.empty:
-        df_data_for_kmeans['Reisezeit'] = df_data_for_kmeans['Reisezeit'] / 10.0 
-        df_data_for_kmeans['Kaffee'] = df_data_for_kmeans['Kaffee'].astype(float)
+        df_data_for_kmeans['Reisezeit'] = df_data_for_kmeans['Reisezeit'] / 10.0 # Skalierung der Reisezeit
+        df_data_for_kmeans['Kaffee'] = df_data_for_kmeans['Kaffee'].astype(float) # Sicherstellen, dass Kaffee auch float ist
     # -----------------------------------------------------------
 
     # Session State für K-Means initialisieren
     if "km_step" not in st.session_state:
-        st.session_state.km_step = "init"
+        st.session_state.km_step = "init" # "init", "centroids_set", "points_assigned", "centroids_moved", "centroids_converged"
     if "centroids" not in st.session_state:
-        st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
+        st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"]) # Centroids speichern skalierte Werte
     if "assignments" not in st.session_state:
         st.session_state.assignments = np.array([])
     if "prev_centroids" not in st.session_state:
-        st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
+        st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"]) # prev_centroids speichern skalierte Werte
 
     col_control, col_plot = st.columns([1, 2])
 
@@ -221,14 +232,8 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         st.subheader("🔗 Link & QR-Code für Teilnehmer")
         
         # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
-        # Wenn Streamlit Cloud, ist es die öffentliche URL.
-        # Wenn lokal, ist es localhost oder die Netzwerk-IP.
-        base_url = st.get_url()
         # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
-        # if '?' in base_url:
-        #     base_url = base_url.split('?')[0] # Schneidet alle Parameter ab
-        # Eine robustere Lösung: Den Parameter manipulieren
-        from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+        base_url = st.get_url()
         parsed_url = urlparse(base_url)
         query_dict = parse_qs(parsed_url.query)
         if 'role' in query_dict:
@@ -259,6 +264,7 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
             assignments = np.zeros(len(df_data_for_kmeans), dtype=int)
             for i, row in df_data_for_kmeans.iterrows():
+                # Centroids sind bereits skaliert, Datenpunkte auch (df_data_for_kmeans)
                 dists = np.sqrt((st.session_state.centroids["Kaffee"] - row["Kaffee"])**2 + (st.session_state.centroids["Reisezeit"] - row["Reisezeit"])**2)
                 assignments[i] = np.argmin(dists)
             st.session_state.assignments = assignments
@@ -278,24 +284,28 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 if not cluster_points.empty:
                     new_centroids_data.append(cluster_points[["Kaffee", "Reisezeit"]].mean().to_dict())
                 else:
+                    # Wenn ein Cluster leer wird, behalte den alten Centroid (oder setze ihn zufällig neu)
                     st.warning(f"Cluster {c} ist leer. Alter Centroid wird beibehalten.")
                     if not st.session_state.centroids.empty and c < len(st.session_state.centroids):
                         new_centroids_data.append(st.session_state.centroids.iloc[c].to_dict())
-                    else:
+                    else: # Falls auch der alte Centroid nicht existiert (sehr unwahrscheinlich), zufällig setzen
                         new_centroids_data.append({'Kaffee': np.random.uniform(0, 10), 'Reisezeit': np.random.uniform(0, 9)})
             
-            st.session_state.prev_centroids = st.session_state.centroids.copy()
-            st.session_state.centroids = pd.DataFrame(new_centroids_data)
+            st.session_state.prev_centroids = st.session_state.centroids.copy() # Zustand VOR der Bewegung
+            st.session_state.centroids = pd.DataFrame(new_centroids_data) # NEUE Centroids
             st.session_state.km_step = "centroids_moved"
         
+        # Schwellenwert für Konvergenz (passt zur skalierten Reisezeit)
+        # 0.05 Einheiten auf der skalierten Achse entspricht 0.5 Minuten auf der Originalachse
         convergence_threshold = 0.05 
 
-        if len(df_data_for_kmeans) < k_value:
+        if len(df_data_for_kmeans) < k_value: # Hier df_data_for_kmeans verwenden
             st.warning(f"Warte auf mindestens {k_value} Teilnehmerpunkte, um K-Means starten zu können.")
             st.session_state.km_step = "init"
         
         # --- K-Means Schritte Buttons ---
         
+        # 1. Zentren zufällig setzen
         disabled_init_btn = (len(df_data_for_kmeans) < k_value) or (st.session_state.km_step not in ["init", "centroids_moved", "centroids_converged"])
         if st.button("1. Zentren zufällig setzen 📍", use_container_width=True, disabled=disabled_init_btn, key="init_centroids_btn"):
             if len(df_data_for_kmeans) >= k_value:
@@ -306,11 +316,13 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 st.session_state.km_step = "centroids_set"
                 st.rerun()
 
+        # 2. Punkte zuweisen
         disabled_assign_btn = (st.session_state.km_step not in ["centroids_set", "centroids_moved"]) or len(df_data_for_kmeans) < k_value
         if st.button("2. Punkte dem nächsten Zentrum zuweisen 🔵", use_container_width=True, disabled=disabled_assign_btn, key="assign_points_btn"):
             assign_points()
             st.rerun()
 
+        # 3. Zentren verschieben
         disabled_move_btn = (st.session_state.km_step != "points_assigned") or len(df_data_for_kmeans) < k_value
         if st.button("3. Zentren neu berechnen (Mittelwert) 📐", use_container_width=True, disabled=disabled_move_btn, key="move_centroids_btn"):
             move_centroids()
@@ -318,6 +330,7 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
         st.write("---")
 
+        # --- AUTO-ITERATION BUTTON ---
         disabled_auto_btn = (st.session_state.km_step == "init") or len(df_data_for_kmeans) < k_value
         if st.button("🚀 K-Means automatisch konvergieren lassen", use_container_width=True, disabled=disabled_auto_btn, key="auto_converge_btn"):
             if st.session_state.km_step == "init":
@@ -326,30 +339,37 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 iteration_count = 0
                 max_iterations = 100 
                 
+                # Wenn wir direkt nach "Zentren setzen" starten, führe die erste Zuweisung hier aus.
                 if st.session_state.km_step == "centroids_set":
-                    assign_points()
+                    assign_points() # Aktualisiert st.session_state.assignments und km_step
                 
+                # Jetzt starte den Hauptzyklus
                 while True:
-                    old_centroids = st.session_state.centroids.copy()
-                    move_centroids()
+                    old_centroids = st.session_state.centroids.copy() # Zustand vor move_centroids()
                     
+                    # 1. Centroids verschieben
+                    move_centroids() # Aktualisiert st.session_state.centroids und km_step zu "centroids_moved"
+                    
+                    # 2. Prüfe auf Konvergenz
                     if not st.session_state.centroids.empty and not old_centroids.empty:
                         centroids_moved_dist = np.sqrt(((st.session_state.centroids - old_centroids)**2).sum(axis=1)).max()
-                    else:
+                    else: # Falls unerwartet leer, z.B. wenn alle Cluster leer wurden
                         centroids_moved_dist = float('inf')
 
                     if centroids_moved_dist < convergence_threshold or iteration_count >= max_iterations:
-                        st.session_state.km_step = "centroids_converged"
+                        st.session_state.km_step = "centroids_converged" # Neuer finaler Zustand
                         if centroids_moved_dist < convergence_threshold:
                             st.success(f"K-Means konvergiert nach {iteration_count+1} Iterationen (Bewegung max. {centroids_moved_dist:.2f} skaliert).")
                         else:
                             st.warning(f"K-Means hat maximale Iterationen ({max_iterations}) erreicht, ohne zu konvergieren.")
-                        break
+                        break # Schleife beenden
                     
-                    assign_points()
+                    # 3. Punkte neu zuweisen für die nächste Iteration
+                    assign_points() # Aktualisiert st.session_state.assignments und km_step zu "points_assigned"
+
                     iteration_count += 1
                 
-                st.rerun()
+                st.rerun() # EINMALIG: App neu laden, um das finale konvergierte Ergebnis zu zeigen
 
         st.write("---")
 
