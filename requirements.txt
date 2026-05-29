@@ -5,4 +5,4 @@ matplotlib
 scikit-learn
 gspread
 plotly>=5.0.0
-qrcode # <-- Neu!
+qrcode
