@@ -17,7 +17,7 @@ FRAGE_2_SKALIERT_LABEL = f"{FRAGE_2} (Skaliert: Original / 10)"
 # --- PRÄSENTATOR PASSWORT ---
 # Für Streamlit Cloud: Diesen Wert in .streamlit/secrets.toml speichern:
 # presenter_password = "dein_geheimes_passwort"
-PRESENTER_PASSWORD = st.secrets.get("presenter_password", "demopassword") # Standardwert für lokale Tests
+PRESENTER_PASSWORD = st.secrets.get("presenter_password", "clustering") # Standardwert für lokale Tests
 
 
 st.set_page_config(layout="wide")
