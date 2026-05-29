@@ -24,7 +24,7 @@ st.set_page_config(layout="wide")
 # --- ROLLEN-MANAGEMENT ---
 query_params = st.query_params
 # Wichtig: st.query_params.get gibt eine Liste zurück, daher [0] für den ersten Wert
-app_role = query_params.get("role", ["participant"])[0] 
+app_role = query_params.get("role", "participant") 
 
 # --- DEBUG-AUSGABEN START ---
 st.sidebar.subheader("DEBUG Informationen:")
