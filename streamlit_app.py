@@ -40,8 +40,8 @@ if app_role == "presenter":
     password_input = st.sidebar.text_input("Passwort eingeben:", type="password", key="presenter_pw")
     
     # --- DEBUG-AUSGABEN START ---
-    st.sidebar.write(f"3. Präsentator-Modus erkannt. Erwartetes Passwort: '{PRESENTER_PASSWORD}'")
-    st.sidebar.write(f"4. Eingegebenes Passwort: '{password_input}'")
+    #st.sidebar.write(f"3. Präsentator-Modus erkannt. Erwartetes Passwort: '{PRESENTER_PASSWORD}'")
+    #st.sidebar.write(f"4. Eingegebenes Passwort: '{password_input}'")
     # --- DEBUG-AUSGABEN ENDE ---
 
     if password_input == PRESENTER_PASSWORD:
