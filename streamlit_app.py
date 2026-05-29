@@ -88,22 +88,22 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
 
 
 # --- QR-CODE GENERATOR FUNKTION ---
-def generate_qr_code(url):
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
+# def generate_qr_code(url):
+#     qr = qrcode.QRCode(
+#         version=1,
+#         error_correction=qrcode.constants.ERROR_CORRECT_L,
+#         box_size=10,
+#         border=4,
+#     )
+#     qr.add_data(url)
+#     qr.make(fit=True)
 
-    img = qr.make_image(fill_color="black", back_color="white")
+#     img = qr.make_image(fill_color="black", back_color="white")
     
-    # QR-Code als PNG-Bytes im Speicher speichern
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+#     # QR-Code als PNG-Bytes im Speicher speichern
+#     buf = BytesIO()
+#     img.save(buf, format="PNG")
+#     return buf.getvalue()
 
 
 # --- ROLLEN-MANAGEMENT ---
