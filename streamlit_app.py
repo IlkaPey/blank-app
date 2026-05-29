@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import sqlite3
 import plotly.express as px
 import plotly.graph_objects as go
-import random # Für np.random.choice und die simulated_data
-import qrcode # Für QR-Code-Generierung
-from io import BytesIO # Für das Speichern des QR-Codes im Speicher
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode # Für URL-Parameter-Handling
+import random
+import gspread # <-- NEU: Für Google Sheets
+import json    # <-- NEU: Für die Secrets
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
 
 # --- FRAGEN-KONFIGURATION ---
@@ -17,37 +16,53 @@ FRAGE_2_SKALIERT_LABEL = f"{FRAGE_2} (Skaliert: Original / 10)"
 
 
 # --- PRÄSENTATOR PASSWORT ---
-# Für Streamlit Cloud: Diesen Wert in .streamlit/secrets.toml speichern:
-# presenter_password = "dein_geheimes_passwort"
-PRESENTER_PASSWORD = st.secrets.get("presenter_password", "clustering") # Standardwert für lokale Tests
+PRESENTER_PASSWORD = st.secrets.get("presenter_password", "clustering")
 
+# --- GOOGLE SHEETS KONFIGURATION ---
+# ERSETZE DIES MIT DEINER SHEETS URL (Du musst die Tabelle "öffentlich teilen" oder den Service Account als Editor hinzufügen)
+GOOGLE_SHEET_URL = st.secrets.get("google_sheet_url", "https://docs.google.com/spreadsheets/d/1_fbJSfXgOuPU7ZwphHufPFtJa5PEu189hYUbB8mmtEw/edit#gid=0")
+WORKSHEET_NAME = st.secrets.get("google_worksheet_name", "Tabelle1") # Normalerweise "Tabelle1"
 
 st.set_page_config(layout="wide")
 
 
-# --- DATENBANK INITIALISIEREN ---
-def init_db():
-    conn = sqlite3.connect("survey_data.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS responses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        val_x REAL, 
-        val_y REAL
-        )
-    """)
-    conn.commit()
-    conn.close()
+# --- GOOGLE SHEETS HILFSFUNKTIONEN ---
 
-# Datenbank bei jedem App-Start initialisieren
-init_db()
+# Autorisierung und Laden des Worksheets
+@st.cache_resource(ttl=3600) # Cache die Worksheet-Verbindung
+def get_worksheet():
+    try:
+        gcp_service_account_info = json.loads(st.secrets["gcp_service_account"])
+        gc = gspread.service_account_from_dict(gcp_service_account_info)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        return sh.worksheet(WORKSHEET_NAME)
+    except Exception as e:
+        st.error(f"Fehler beim Zugriff auf Google Sheets. Bitte stellen Sie sicher, dass die URL/der Name korrekt ist, die Credentials richtig konfiguriert sind und der Service Account Bearbeitungsrechte hat. Details: {e}")
+        st.stop() # App beenden, wenn keine Verbindung zum Sheet möglich ist
+
+# Daten laden
+@st.cache_data(ttl=60) # Cache die Daten für 60 Sekunden, um API-Limits zu schonen
+def load_data():
+    ws = get_worksheet()
+    data = ws.get_all_records() # Lädt alle Zeilen als Liste von Dictionaries
+    df = pd.DataFrame(data)
+    # Sicherstellen, dass die Spalten numerisch sind, da get_all_records Strings zurückgeben kann
+    if not df.empty:
+        df['Kaffee'] = pd.to_numeric(df['Kaffee'], errors='coerce')
+        df['Reisezeit'] = pd.to_numeric(df['Reisezeit'], errors='coerce')
+        df.dropna(inplace=True) # Zeilen mit NaN (Fehler beim Konvertieren) entfernen
+    return df
+
+# Daten hinzufügen
+def append_data(name, coffee_val, commute_val):
+    ws = get_worksheet()
+    ws.append_row([name, coffee_val, commute_val]) # Fügt eine neue Zeile hinzu
+    st.cache_data.clear() # Cache leeren, damit die nächsten load_data() die neuen Daten holt
 
 
 # --- FUNKTION: ZUSÄTZLICHE SIMULIERTE DATEN GENERIEREN UND EINFÜGEN ---
 def generate_and_insert_simulated_data(num_points_per_cluster=5):
-    conn = sqlite3.connect("survey_data.db")
-    cursor = conn.cursor()
+    ws = get_worksheet()
     
     # Beispiel-Cluster-Zentren für simulierte Daten (unskalierte Originalwerte)
     sim_clusters = [
@@ -56,17 +71,14 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
         {"name_prefix": "Sim_C", "mean_coffee": 3, "mean_commute": 50, "std_coffee": 0.8, "std_commute": 10},
     ]
     
+    # Ermittle die höchste ID von bereits existierenden simulierten Daten
     current_max_sim_id = 0
-    try:
-        cursor.execute("SELECT name FROM responses WHERE name LIKE 'Sim_%' ORDER BY name DESC LIMIT 1")
-        res = cursor.fetchone()
-        if res and res[0]:
-            parts = res[0].split('_')
-            if len(parts) > 1 and parts[-1].isdigit():
-                current_max_sim_id = int(parts[-1])
-    except Exception:
-        pass
-
+    df_current_data = load_data()
+    sim_names = df_current_data[df_current_data['Name'].str.startswith('Sim_', na=False)]['Name']
+    if not sim_names.empty:
+        max_sim_name = sim_names.apply(lambda x: int(x.split('_')[-1]) if x.split('_')[-1].isdigit() else 0).max()
+        current_max_sim_id = max_sim_name
+    
     sim_data_to_insert = []
     for cluster_info in sim_clusters:
         for i in range(num_points_per_cluster):
@@ -79,92 +91,76 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
             coffee = max(0, round(coffee))
             commute = max(0, round(commute))
 
-            sim_data_to_insert.append((name, float(coffee), float(commute)))
+            sim_data_to_insert.append([name, float(coffee), float(commute)])
 
-    cursor.executemany("INSERT INTO responses (name, val_x, val_y) VALUES (?, ?, ?)", sim_data_to_insert)
-    conn.commit()
-    conn.close()
+    ws.append_rows(sim_data_to_insert) # Fügt mehrere Reihen hinzu
+    st.cache_data.clear() # Cache leeren, damit die nächsten load_data() die neuen Daten holt
     st.success(f"{len(sim_data_to_insert)} simulierte Datenpunkte hinzugefügt!")
 
 
-# # --- QR-CODE GENERATOR FUNKTION ---
-# def generate_qr_code(url):
-#     qr = qrcode.QRCode(
-#         version=1,
-#         error_correction=qrcode.constants.ERROR_CORRECT_L,
-#         box_size=10,
-#         border=4,
-#     )
-#     qr.add_data(url)
-#     qr.make(fit=True)
+# --- QR-CODE GENERATOR FUNKTION (unverändert) ---
+# ... (deine generate_qr_code Funktion) ...
+def generate_qr_code(url):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
 
-#     img = qr.make_image(fill_color="black", back_color="white")
+    img = qr.make_image(fill_color="black", back_color="white")
     
-#     # QR-Code als PNG-Bytes im Speicher speichern
-#     buf = BytesIO()
-#     img.save(buf, format="PNG")
-#     return buf.getvalue()
+    # QR-Code als PNG-Bytes im Speicher speichern
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 # --- ROLLEN-MANAGEMENT ---
 query_params = st.query_params
-app_role = query_params.get("role", "participant") # st.query_params.get gibt direkt den Wert zurück
+app_role = query_params.get("role", "participant")
 
 # Initialisiere 'current_selected_view' im Session State für den Präsentator
 if "current_selected_view" not in st.session_state:
     st.session_state.current_selected_view = "📱 Teilnehmer: Fragebogen"
 
 # Bestimme die anzuzeigende Ansicht
-view = st.session_state.current_selected_view # Standardmäßig die zuletzt gewählte Ansicht
+view = st.session_state.current_selected_view
 
 if app_role == "presenter":
     st.sidebar.title("Präsentator-Login")
     password_input = st.sidebar.text_input("Passwort eingeben:", type="password", key="presenter_pw")
     
-    # Debug-Informationen (können später entfernt werden)
-    # st.sidebar.write(f"DEBUG: Erwartetes Passwort: '{PRESENTER_PASSWORD}'")
-    # st.sidebar.write(f"DEBUG: Eingegebenes Passwort: '{password_input}'")
-
     if password_input == PRESENTER_PASSWORD:
         st.sidebar.success("Angemeldet als Präsentator.")
         
-        # Wenn der Präsentator sich gerade erfolgreich angemeldet hat (und der View noch auf 'participant' steht)
         if st.session_state.current_selected_view == "📱 Teilnehmer: Fragebogen":
-            # Setze die Standardauswahl auf die Präsentator-Demo
             st.session_state.current_selected_view = "📺 Präsentator: Live-Schritt-Demo"
-            # Ein st.rerun() hier würde den Wechsel sofort nach dem Login zeigen.
-            # Da wir das Radio-Element unten sowieso rendern, kann es auch ohne rerun funktionieren,
-            # wenn man es direkt in den index des radio packt.
-            # st.rerun() 
 
         view_options = ["📱 Teilnehmer: Fragebogen", "📺 Präsentator: Live-Schritt-Demo"]
         default_index_for_radio = view_options.index(st.session_state.current_selected_view)
 
-        # Die Auswahl des Radio-Buttons aktualisiert st.session_state.current_selected_view
         st.session_state.current_selected_view = st.sidebar.radio(
             "Ansicht wählen:",
             view_options,
-            index=default_index_for_radio, # Setzt den initialen Auswahlwert
+            index=default_index_for_radio,
             key="presenter_view_radio"
         )
-        # 'view' wird für die Rendering-Logik aus dem Session State gelesen
         view = st.session_state.current_selected_view 
 
     else:
         st.sidebar.error("Falsches Passwort für Präsentator.")
-        app_role = "participant" # Fallback auf Teilnehmer-Rolle
-        # Wenn Passwort falsch, auch die Präsentator-View-Auswahl zurücksetzen
+        app_role = "participant"
         st.session_state.current_selected_view = "📱 Teilnehmer: Fragebogen"
-        # Und 'view' für die Rendering-Logik wieder auf den Standard setzen
         view = st.session_state.current_selected_view
 else:
-    # Wenn app_role nicht "presenter" ist (also "participant" ist), 
-    # dann ist die anzuzeigende Ansicht immer das Teilnehmer-Formular.
     view = "📱 Teilnehmer: Fragebogen"
 
 
 # ==============================================================================
-# VIEW 1: TEILNEHMER-EINGABE (immer sichtbar für Teilnehmer-Rolle)
+# VIEW 1: TEILNEHMER-EINGABE
 # ==============================================================================
 if app_role == "participant" or view == "📱 Teilnehmer: Fragebogen":
     st.title("Inklusive Daten-Eingabe 🗳️")
@@ -172,8 +168,8 @@ if app_role == "participant" or view == "📱 Teilnehmer: Fragebogen":
 
     with st.form("survey_form", clear_on_submit=True):
         user_name = st.text_input("Dein Name / Kürzel:", placeholder="z. B. Anna oder Gast_1", key="participant_name_input")
-        ans_x = st.slider(FRAGE_1, 0, 10, 3, step=1, key="participant_coffee_slider") # Ganze Tassen Kaffee
-        ans_y = st.slider(FRAGE_2, 0, 90, 20, step=5, key="participant_commute_slider") # Ganze Minuten Reisezeit
+        ans_x = st.slider(FRAGE_1, 0, 10, 3, step=1, key="participant_coffee_slider")
+        ans_y = st.slider(FRAGE_2, 0, 90, 20, step=5, key="participant_commute_slider")
 
         submitted = st.form_submit_button("Antwort absenden", key="participant_submit_button")
 
@@ -181,43 +177,35 @@ if app_role == "participant" or view == "📱 Teilnehmer: Fragebogen":
             if not user_name.strip():
                 st.error("Bitte gib einen Namen oder ein Kürzel ein.")
             else:
-                conn = sqlite3.connect("survey_data.db")
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO responses (name, val_x, val_y) VALUES (?, ?, ?)", (user_name.strip(), float(ans_x), float(ans_y)))
-                conn.commit()
-                conn.close()
+                append_data(user_name.strip(), float(ans_x), float(ans_y)) # <-- GEÄNDERT: Appends to Google Sheet
                 st.success(f"Danke {user_name}! Deine Daten wurden erfolgreich übertragen. Schau auf die Leinwand!")
                 st.balloons()
 
 
 # ==============================================================================
-# VIEW 2: PRÄSENTATOR-LEINWAND (nur sichtbar für Präsentator-Rolle und ausgewählte Ansicht)
+# VIEW 2: PRÄSENTATOR-LEINWAND
 # ==============================================================================
 if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
     st.title("🎓 K-Means Clustering: Wer ist in welcher Gruppe?")
 
-    # Daten laden (inklusive Name)
-    conn = sqlite3.connect("survey_data.db")
-    df_raw = pd.read_sql_query("SELECT name AS Name, val_x AS Kaffee, val_y AS Reisezeit FROM responses", conn)
-    conn.close()
+    df_raw = load_data() # <-- GEÄNDERT: Lädt Daten aus Google Sheet
 
     # --- DATEN SKALIEREN für K-Means Berechnungen und Plotting ---
-    # Die originalen Daten bleiben in df_raw für die Anzeige im Hover-Text etc.
     df_data_for_kmeans = df_raw.copy()
     if not df_data_for_kmeans.empty:
-        df_data_for_kmeans['Reisezeit'] = df_data_for_kmeans['Reisezeit'] / 10.0 # Skalierung der Reisezeit
-        df_data_for_kmeans['Kaffee'] = df_data_for_kmeans['Kaffee'].astype(float) # Sicherstellen, dass Kaffee auch float ist
+        df_data_for_kmeans['Reisezeit'] = df_data_for_kmeans['Reisezeit'] / 10.0
+        df_data_for_kmeans['Kaffee'] = df_data_for_kmeans['Kaffee'].astype(float)
     # -----------------------------------------------------------
 
     # Session State für K-Means initialisieren
     if "km_step" not in st.session_state:
-        st.session_state.km_step = "init" # "init", "centroids_set", "points_assigned", "centroids_moved", "centroids_converged"
+        st.session_state.km_step = "init"
     if "centroids" not in st.session_state:
-        st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"]) # Centroids speichern skalierte Werte
+        st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
     if "assignments" not in st.session_state:
         st.session_state.assignments = np.array([])
     if "prev_centroids" not in st.session_state:
-        st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"]) # prev_centroids speichern skalierte Werte
+        st.session_state.prev_centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
 
     col_control, col_plot = st.columns([1, 2])
 
@@ -229,25 +217,21 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
         # --- QR Code anzeigen ---
         st.write("---")
-        # st.subheader("🔗 Link & QR-Code für Teilnehmer")
+        st.subheader("🔗 Link für Teilnehmer")
         
-        # # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
-        # # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
-        # # base_url = st.get_url()
-        # parsed_url = urlparse(base_url)
-        # query_dict = parse_qs(parsed_url.query)
-        # if 'role' in query_dict:
-        #     del query_dict['role'] # Entferne den role-Parameter
-        # participant_query_string = urlencode(query_dict, doseq=True) # Baue Query-String neu ohne 'role'
-        # participant_url_parts = parsed_url._replace(query=participant_query_string)
-        # participant_url = urlunparse(participant_url_parts)
+        base_url = st.get_url()
+        parsed_url = urlparse(base_url)
+        query_dict = parse_qs(parsed_url.query)
+        if 'role' in query_dict:
+            del query_dict['role']
+        participant_query_string = urlencode(query_dict, doseq=True)
+        participant_url_parts = parsed_url._replace(query=participant_query_string)
+        participant_url = urlunparse(participant_url_parts)
 
 
-        # st.markdown(f"Teilen Sie diesen Link mit den Teilnehmern: [Teilnehmer-Link]({participant_url})")
-        
-        # qr_bytes = generate_qr_code(participant_url)
-        # st.image(qr_bytes, width=150, caption="QR-Code zur Eingabeseite")
-        # st.write("---")
+        st.markdown(f"Teilen Sie diesen Link mit den Teilnehmern: [Teilnehmer-Link]({participant_url})")
+        # QR Code entfernt, da es Probleme machte.
+        st.write("---")
 
         # --- Button für simulierte Daten ---
         if st.button("➕ Zusätzliche (simulierte) Daten hinzufügen", use_container_width=True, key="add_simulated_data_btn"):
@@ -264,7 +248,6 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
             assignments = np.zeros(len(df_data_for_kmeans), dtype=int)
             for i, row in df_data_for_kmeans.iterrows():
-                # Centroids sind bereits skaliert, Datenpunkte auch (df_data_for_kmeans)
                 dists = np.sqrt((st.session_state.centroids["Kaffee"] - row["Kaffee"])**2 + (st.session_state.centroids["Reisezeit"] - row["Reisezeit"])**2)
                 assignments[i] = np.argmin(dists)
             st.session_state.assignments = assignments
@@ -284,28 +267,24 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 if not cluster_points.empty:
                     new_centroids_data.append(cluster_points[["Kaffee", "Reisezeit"]].mean().to_dict())
                 else:
-                    # Wenn ein Cluster leer wird, behalte den alten Centroid (oder setze ihn zufällig neu)
                     st.warning(f"Cluster {c} ist leer. Alter Centroid wird beibehalten.")
                     if not st.session_state.centroids.empty and c < len(st.session_state.centroids):
                         new_centroids_data.append(st.session_state.centroids.iloc[c].to_dict())
-                    else: # Falls auch der alte Centroid nicht existiert (sehr unwahrscheinlich), zufällig setzen
+                    else:
                         new_centroids_data.append({'Kaffee': np.random.uniform(0, 10), 'Reisezeit': np.random.uniform(0, 9)})
             
-            st.session_state.prev_centroids = st.session_state.centroids.copy() # Zustand VOR der Bewegung
-            st.session_state.centroids = pd.DataFrame(new_centroids_data) # NEUE Centroids
+            st.session_state.prev_centroids = st.session_state.centroids.copy()
+            st.session_state.centroids = pd.DataFrame(new_centroids_data)
             st.session_state.km_step = "centroids_moved"
         
-        # Schwellenwert für Konvergenz (passt zur skalierten Reisezeit)
-        # 0.05 Einheiten auf der skalierten Achse entspricht 0.5 Minuten auf der Originalachse
         convergence_threshold = 0.05 
 
-        if len(df_data_for_kmeans) < k_value: # Hier df_data_for_kmeans verwenden
+        if len(df_data_for_kmeans) < k_value:
             st.warning(f"Warte auf mindestens {k_value} Teilnehmerpunkte, um K-Means starten zu können.")
             st.session_state.km_step = "init"
         
         # --- K-Means Schritte Buttons ---
         
-        # 1. Zentren zufällig setzen
         disabled_init_btn = (len(df_data_for_kmeans) < k_value) or (st.session_state.km_step not in ["init", "centroids_moved", "centroids_converged"])
         if st.button("1. Zentren zufällig setzen 📍", use_container_width=True, disabled=disabled_init_btn, key="init_centroids_btn"):
             if len(df_data_for_kmeans) >= k_value:
@@ -316,13 +295,11 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 st.session_state.km_step = "centroids_set"
                 st.rerun()
 
-        # 2. Punkte zuweisen
         disabled_assign_btn = (st.session_state.km_step not in ["centroids_set", "centroids_moved"]) or len(df_data_for_kmeans) < k_value
         if st.button("2. Punkte dem nächsten Zentrum zuweisen 🔵", use_container_width=True, disabled=disabled_assign_btn, key="assign_points_btn"):
             assign_points()
             st.rerun()
 
-        # 3. Zentren verschieben
         disabled_move_btn = (st.session_state.km_step != "points_assigned") or len(df_data_for_kmeans) < k_value
         if st.button("3. Zentren neu berechnen (Mittelwert) 📐", use_container_width=True, disabled=disabled_move_btn, key="move_centroids_btn"):
             move_centroids()
@@ -330,7 +307,6 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
         st.write("---")
 
-        # --- AUTO-ITERATION BUTTON ---
         disabled_auto_btn = (st.session_state.km_step == "init") or len(df_data_for_kmeans) < k_value
         if st.button("🚀 K-Means automatisch konvergieren lassen", use_container_width=True, disabled=disabled_auto_btn, key="auto_converge_btn"):
             if st.session_state.km_step == "init":
@@ -339,37 +315,30 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 iteration_count = 0
                 max_iterations = 100 
                 
-                # Wenn wir direkt nach "Zentren setzen" starten, führe die erste Zuweisung hier aus.
                 if st.session_state.km_step == "centroids_set":
-                    assign_points() # Aktualisiert st.session_state.assignments und km_step
+                    assign_points()
                 
-                # Jetzt starte den Hauptzyklus
                 while True:
-                    old_centroids = st.session_state.centroids.copy() # Zustand vor move_centroids()
+                    old_centroids = st.session_state.centroids.copy()
+                    move_centroids()
                     
-                    # 1. Centroids verschieben
-                    move_centroids() # Aktualisiert st.session_state.centroids und km_step zu "centroids_moved"
-                    
-                    # 2. Prüfe auf Konvergenz
                     if not st.session_state.centroids.empty and not old_centroids.empty:
                         centroids_moved_dist = np.sqrt(((st.session_state.centroids - old_centroids)**2).sum(axis=1)).max()
-                    else: # Falls unerwartet leer, z.B. wenn alle Cluster leer wurden
+                    else:
                         centroids_moved_dist = float('inf')
 
                     if centroids_moved_dist < convergence_threshold or iteration_count >= max_iterations:
-                        st.session_state.km_step = "centroids_converged" # Neuer finaler Zustand
+                        st.session_state.km_step = "centroids_converged"
                         if centroids_moved_dist < convergence_threshold:
                             st.success(f"K-Means konvergiert nach {iteration_count+1} Iterationen (Bewegung max. {centroids_moved_dist:.2f} skaliert).")
                         else:
                             st.warning(f"K-Means hat maximale Iterationen ({max_iterations}) erreicht, ohne zu konvergieren.")
-                        break # Schleife beenden
+                        break
                     
-                    # 3. Punkte neu zuweisen für die nächste Iteration
-                    assign_points() # Aktualisiert st.session_state.assignments und km_step zu "points_assigned"
-
+                    assign_points()
                     iteration_count += 1
                 
-                st.rerun() # EINMALIG: App neu laden, um das finale konvergierte Ergebnis zu zeigen
+                st.rerun()
 
         st.write("---")
 
@@ -385,25 +354,22 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
                 if not all(col in imported_df.columns for col in required_cols):
                     st.error(f"Die hochgeladene CSV-Datei muss die Spalten {required_cols} enthalten. Gefundene Spalten: {imported_df.columns.tolist()}")
                 else:
+                    # Daten bereinigen und für Google Sheets vorbereiten
                     db_df = imported_df[required_cols].copy()
-                    db_df.rename(columns={'Kaffee': 'val_x', 'Reisezeit': 'val_y'}, inplace=True)
+                    db_df['Kaffee'] = pd.to_numeric(db_df['Kaffee'], errors='coerce')
+                    db_df['Reisezeit'] = pd.to_numeric(db_df['Reisezeit'], errors='coerce')
+                    db_df.dropna(subset=['Kaffee', 'Reisezeit'], inplace=True)
                     
-                    db_df['val_x'] = pd.to_numeric(db_df['val_x'], errors='coerce')
-                    db_df['val_y'] = pd.to_numeric(db_df['val_y'], errors='coerce')
-                    db_df.dropna(subset=['val_x', 'val_y'], inplace=True)
-
                     if db_df.empty:
                         st.error("Nach der Validierung und Bereinigung sind keine gültigen Daten mehr zum Importieren vorhanden.")
                     else:
-                        conn = sqlite3.connect("survey_data.db")
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM responses")
-                        conn.commit()
+                        ws = get_worksheet()
+                        ws.clear() # Leert das gesamte Worksheet
+                        ws.append_row(['Name', 'Kaffee', 'Reisezeit']) # Header wieder hinzufügen
+                        ws.append_rows(db_df.values.tolist()) # Daten als Liste von Listen hinzufügen
+                        st.cache_data.clear() # Cache leeren
                         
-                        db_df.to_sql('responses', conn, if_exists='append', index=False)
-                        conn.close()
-                        
-                        st.success(f"{len(db_df)} Datenpunkte erfolgreich importiert und gespeichert.")
+                        st.success(f"{len(db_df)} Datenpunkte erfolgreich importiert und gespeichert in Google Sheets.")
                         st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
                         st.session_state.assignments = np.array([])
                         st.session_state.km_step = "init"
@@ -452,11 +418,11 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
 
         # --- DATEN UND ALGORITHMUS ZURÜCKSETZEN ---
         if st.button("⚠️ Daten & Algorithmus zurücksetzen", use_container_width=True, key="reset_button_overall"):
-            conn = sqlite3.connect("survey_data.db")
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM responses")
-            conn.commit()
-            conn.close()
+            ws = get_worksheet() # <-- GEÄNDERT: Greift auf Google Sheets zu
+            ws.clear() # Leert das gesamte Worksheet
+            ws.append_row(['Name', 'Kaffee', 'Reisezeit']) # Header wieder hinzufügen
+            st.cache_data.clear() # Cache leeren
+            
             st.session_state.centroids = pd.DataFrame(columns=["Kaffee", "Reisezeit"])
             st.session_state.assignments = np.array([])
             st.session_state.km_step = "init"
