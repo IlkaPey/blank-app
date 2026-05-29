@@ -88,22 +88,22 @@ def generate_and_insert_simulated_data(num_points_per_cluster=5):
 
 
 # --- QR-CODE GENERATOR FUNKTION ---
-# def generate_qr_code(url):
-#     qr = qrcode.QRCode(
-#         version=1,
-#         error_correction=qrcode.constants.ERROR_CORRECT_L,
-#         box_size=10,
-#         border=4,
-#     )
-#     qr.add_data(url)
-#     qr.make(fit=True)
+def generate_qr_code(url):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
 
-#     img = qr.make_image(fill_color="black", back_color="white")
+    img = qr.make_image(fill_color="black", back_color="white")
     
-#     # QR-Code als PNG-Bytes im Speicher speichern
-#     buf = BytesIO()
-#     img.save(buf, format="PNG")
-#     return buf.getvalue()
+    # QR-Code als PNG-Bytes im Speicher speichern
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 # --- ROLLEN-MANAGEMENT ---
@@ -228,26 +228,39 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         st.write(f"Teilnehmende Personen: **{len(df_raw)}**")
 
         # --- QR Code anzeigen ---
-        # st.write("---")
-        # st.subheader("🔗 Link & QR-Code für Teilnehmer")
+        st.write("---")
+        st.subheader("🔗 Link & QR-Code für Teilnehmer")
         
-        # # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
-        # # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
-        # base_url = st.get_url()
-        # parsed_url = urlparse(base_url)
-        # query_dict = parse_qs(parsed_url.query)
-        # if 'role' in query_dict:
-        #     del query_dict['role'] # Entferne den role-Parameter
-        # participant_query_string = urlencode(query_dict, doseq=True) # Baue Query-String neu ohne 'role'
-        # participant_url_parts = parsed_url._replace(query=participant_query_string)
-        # participant_url = urlunparse(participant_url_parts)
+        # Streamlit.get_url() gibt die aktuelle URL zurück (mit host und Port)
+        # Entferne den 'role' Parameter, damit Teilnehmer nur das Formular sehen
+        #base_url = st.get_url()
+        base_url = st.get_url()
+        except AttributeError:
+            # Fallback für ältere Streamlit-Versionen
+            # Dies ist ein Workaround und kann in zukünftigen Streamlit-Versionen brechen
+            from streamlit.web.server.websocket_headers import _get_websocket_headers
+            headers = _get_websocket_headers()
+            if headers and "X-Forwarded-Proto" in headers and "X-Forwarded-Host" in headers:
+                base_url = f"{headers['X-Forwarded-Proto']}://{headers['X-Forwarded-Host']}"
+                if headers.get("X-Forwarded-Port") and headers.get("X-Forwarded-Port") != "443": # Default HTTPS Port
+                    base_url += f":{headers['X-Forwarded-Port']}"
+            else:
+                st.warning("Konnte URL nicht zuverlässig ermitteln. Zeige Placeholder.")
+                base_url = "http://localhost:8501" # Fallback auf Localhost, wenn nichts ermittelt werden kann
+        parsed_url = urlparse(base_url)
+        query_dict = parse_qs(parsed_url.query)
+        if 'role' in query_dict:
+            del query_dict['role'] # Entferne den role-Parameter
+        participant_query_string = urlencode(query_dict, doseq=True) # Baue Query-String neu ohne 'role'
+        participant_url_parts = parsed_url._replace(query=participant_query_string)
+        participant_url = urlunparse(participant_url_parts)
 
 
-        # st.markdown(f"Teilen Sie diesen Link mit den Teilnehmern: [Teilnehmer-Link]({participant_url})")
+        st.markdown(f"Teilen Sie diesen Link mit den Teilnehmern: [Teilnehmer-Link]({participant_url})")
         
-        # qr_bytes = generate_qr_code(participant_url)
-        # st.image(qr_bytes, width=150, caption="QR-Code zur Eingabeseite")
-        # st.write("---")
+        qr_bytes = generate_qr_code(participant_url)
+        st.image(qr_bytes, width=150, caption="QR-Code zur Eingabeseite")
+        st.write("---")
 
         # --- Button für simulierte Daten ---
         if st.button("➕ Zusätzliche (simulierte) Daten hinzufügen", use_container_width=True, key="add_simulated_data_btn"):
