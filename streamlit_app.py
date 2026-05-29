@@ -192,17 +192,17 @@ if app_role == "presenter" and view == "📺 Präsentator: Live-Schritt-Demo":
         
         st.write(f"Teilnehmende Personen: **{len(df_raw)}**")
 
-        # --- Link für Teilnehmer (ohne QR-Code) ---
-        st.write("---")
-        st.subheader("🔗 Link für Teilnehmer")
+        # # --- Link für Teilnehmer (ohne QR-Code) ---
+        # st.write("---")
+        # st.subheader("🔗 Link für Teilnehmer")
         
-        # st.get_url() ist die bevorzugte Methode, um die Basis-URL der App zu erhalten
-        # Falls es hier einen Fehler gibt (z.B. bei sehr alten Streamlit-Versionen),
-        # müsstest du den Link manuell kopieren und einfügen oder diesen Block entfernen.
-        try:
-            base_url = st.get_url()
-        except AttributeError:
-            st.warning("`st.get_url()` ist in dieser Streamlit-Version nicht verfügbar. Bitte kopieren Sie die URL aus der Adresszeile des Browsers.")
-            base_url = "Ihre_App_URL_hier_einfuegen" # Platzhalter für den Fallback
+        # # st.get_url() ist die bevorzugte Methode, um die Basis-URL der App zu erhalten
+        # # Falls es hier einen Fehler gibt (z.B. bei sehr alten Streamlit-Versionen),
+        # # müsstest du den Link manuell kopieren und einfügen oder diesen Block entfernen.
+        # try:
+        #     base_url = st.get_url()
+        # except AttributeError:
+        #     st.warning("`st.get_url()` ist in dieser Streamlit-Version nicht verfügbar. Bitte kopieren Sie die URL aus der Adresszeile des Browsers.")
+        #     base_url = "Ihre_App_URL_hier_einfuegen" # Platzhalter für den Fallback
 
-        parsed_url = urlparse(base_url)
+        # parsed_url = urlparse(base_url)
